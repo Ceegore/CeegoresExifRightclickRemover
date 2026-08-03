@@ -106,6 +106,21 @@ internal static class FixtureFactory
     }
 
     /// <summary>
+    /// Valid minimal JPEG (D4 fixture) with 100 bytes of trailing garbage appended AFTER the EOI.
+    /// Used to verify the stripper trims trailing junk instead of silently copying it into the
+    /// output. A previous implementation of <c>CopyRestVerbatim</c> wrote every byte from the
+    /// first SOS to EOF, so a malformed input with garbage past the EOI produced an output that
+    /// was larger than necessary and lied about "lossless": the file still decoded, but the
+    /// extra bytes were the corruption signature, not the image.
+    /// </summary>
+    public static byte[] JpegWithJunkAfterEoi()
+    {
+        var bytes = new List<byte>(MinimalJpeg());
+        for (int i = 0; i < 100; i++) bytes.Add(0xAA);
+        return bytes.ToArray();
+    }
+
+    /// <summary>
     /// Minimal PNG with only the critical chunks. 4x4 RGB.
     /// </summary>
     public static byte[] MinimalPng()
@@ -228,6 +243,44 @@ internal static class FixtureFactory
         t.Add(0);
         t.AddRange(Encoding.UTF8.GetBytes("TestSoft 1.0"));
         WritePngChunk(bw, "tEXt", t.ToArray());
+
+        WritePngChunk(bw, "IDAT", new byte[]
+        {
+            0x78, 0x01, 0x01, 0x06, 0x00, 0xFB, 0xFF, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x04, 0x6A, 0x6F, 0xC2, 0x68
+        });
+
+        WritePngChunk(bw, "IEND", Array.Empty<byte>());
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// PNG that includes a "private" ancillary chunk ("tEST") whose first byte is
+    /// lowercase (ancillary) but whose remaining bytes are mixed-case — that's a
+    /// valid "private" chunk by the PNG spec. The stripper's ShouldDrop has no case
+    /// for "tEST" so it falls through to <c>return false</c> (keep). This is the D2
+    /// regression fixture: the engine and the UI's keep set both treat unknown
+    /// ancillary chunks as "kept", never "removed".
+    /// </summary>
+    public static byte[] PngWithUnknownAncillaryChunk()
+    {
+        var ms = new MemoryStream();
+        var bw = new BinaryWriter(ms);
+        bw.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+
+        WritePngChunk(bw, "IHDR", new byte[]
+        {
+            0x00,0x00,0x00,0x04,
+            0x00,0x00,0x00,0x04,
+            0x08,0x02,0x00,0x00,0x00
+        });
+
+        WritePngChunk(bw, "tEST", new byte[] { 0x00, 0x00, 0x00, 0x00 });
 
         WritePngChunk(bw, "IDAT", new byte[]
         {

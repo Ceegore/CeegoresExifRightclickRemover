@@ -147,6 +147,28 @@ public class PngStripperTests : IDisposable
     }
 
     [Fact]
+    public void Strip_KeepsUnknownAncillaryChunk_UnderAllProfiles()
+    {
+        // D2: a "private" ancillary chunk whose type is not in PngMetadataStripper.ShouldDrop's
+        // switch (e.g. "tEST") must be kept by the stripper under every profile. The engine
+        // falls through to "return false" for any type it doesn't recognize, so the chunk is
+        // preserved. The UI's keep set must agree (the OverlayViewModel fix adds PNGUNKNOWN
+        // to the always-keep set so the grid shows "Would be kept" for any such chunk the
+        // inspector surfaces).
+        foreach (var profile in new[] { StripProfile.Privacy, StripProfile.AllMetadata, StripProfile.Minimal })
+        {
+            var src = WriteTemp(FixtureFactory.PngWithUnknownAncillaryChunk(), $"er-unknown-{profile}-{Guid.NewGuid():N}.png");
+            var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+            _tempFiles.Add(outPath);
+
+            PngMetadataStripper.Strip(src, outPath, overwriteSource: false, profile);
+
+            var bytes = File.ReadAllBytes(outPath);
+            Assert.True(ContainsChunk(bytes, "tEST"), $"unknown ancillary chunk 'tEST' must be kept under {profile}.");
+        }
+    }
+
+    [Fact]
     public void Strip_TruncatedPng_ThrowsAndLeavesOriginalUntouched()
     {
         var bytes = FixtureFactory.TruncatedPng();

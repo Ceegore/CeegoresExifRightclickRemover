@@ -118,6 +118,15 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
             set.Add("PNGSBIT");
             set.Add("PNGTRNS");
 
+            // D2: any chunk MetadataExtractor surfaces as "PNG Unknown" (e.g. a newer
+            // PngDirectory tag that doesn't match a known case in MapPngGroup, or a
+            // custom ancillary chunk) is kept by the stripper — PngMetadataStripper.ShouldDrop
+            // only returns true for tEXt/zTXt/iTXt/tIME/eXIf/iCCP/hIST/gAMA/cHRM/sRGB, and
+            // falls through to "return false" (keep) for anything else. The grid must
+            // match that contract: an unknown ancillary chunk must show as "Would be kept",
+            // never "Would be removed" (H2 lie).
+            set.Add("PNGUNKNOWN");
+
             // Color-management chunks: kept under Privacy/Minimal, stripped under AllMetadata.
             if (profile != StripProfile.AllMetadata)
             {
@@ -362,6 +371,11 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         if (entry.Group == MetadataGroups.PngBkgd) return "PNGBKGD";
         if (entry.Group == MetadataGroups.PngSbit) return "PNGSBIT";
         if (entry.Group == MetadataGroups.PngTrns) return "PNGTRNS";
+        // D2: explicit case for PngUnknown (otherwise the function falls through to
+        // `return entry.Group` which yields "PNG Unknown" with a space, never matching
+        // the keep-set key, so the grid would show "Would be removed" for a chunk the
+        // stripper keeps).
+        if (entry.Group == MetadataGroups.PngUnknown) return "PNGUNKNOWN";
         return entry.Group;
     }
 

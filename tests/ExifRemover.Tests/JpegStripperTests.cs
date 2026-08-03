@@ -113,6 +113,58 @@ public class JpegStripperTests : IDisposable
     }
 
     [Fact]
+    public void Strip_InputPathEqualsOutputPath_OverwriteFalse_LeavesSourceIntact()
+    {
+        // D3 (stripper side): the verifier previously did "touch then clear" on the output
+        // file, which would destroy the input if the caller passed the same path for both.
+        // The stripper itself, when called with input==output and overwriteSource=false,
+        // picks a non-clashing sibling via AtomicFile.NextNonClashingPath and leaves the
+        // source intact. This test pins that behavior so a future regression to the
+        // stripper (e.g. accidentally deleting the source) would be caught.
+        var bytes = FixtureFactory.JpegWithExifXmpIccAndComment();
+        var src = WriteTemp(bytes, $"er-self-{Guid.NewGuid():N}.jpg");
+        var originalBytes = File.ReadAllBytes(src);
+
+        // input == output path, overwrite=false.
+        StripPipeline.Strip(src, src, overwriteSource: false, StripProfile.Privacy);
+
+        // The source must still exist and be unchanged: the stripper wrote to a sibling.
+        Assert.True(File.Exists(src));
+        Assert.Equal(originalBytes, File.ReadAllBytes(src));
+        // And a sibling must exist with the stripped content.
+        var sibling = Path.Combine(
+            Path.GetDirectoryName(src)!,
+            Path.GetFileNameWithoutExtension(src) + " (2)" + Path.GetExtension(src));
+        Assert.True(File.Exists(sibling), $"Expected sibling at {sibling}");
+    }
+
+    [Fact]
+    public void Strip_TrimsJunkAfterEoi_DoesNotCopyTrailingGarbage()
+    {
+        // D4: a malformed JPEG with garbage bytes appended after the EOI marker
+        // must have the garbage trimmed, not silently copied through. Otherwise the
+        // output is larger than the user expects and the "lossless" claim is
+        // misleading (the extra bytes are the corruption signature, not image data).
+        var bytes = FixtureFactory.JpegWithJunkAfterEoi();
+        var src = WriteTemp(bytes, $"er-junk-{Guid.NewGuid():N}.jpg");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.jpg");
+        _tempFiles.Add(outPath);
+
+        JpegMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
+
+        var outBytes = File.ReadAllBytes(outPath);
+        // The output must be strictly smaller than the input (the 100 garbage bytes are gone).
+        Assert.True(outBytes.Length < bytes.Length, $"output {outBytes.Length} should be smaller than input {bytes.Length} after trimming trailing junk");
+        // The output must still be a structurally-valid JPEG ending in EOI.
+        Assert.Equal(0xFF, outBytes[^2]);
+        Assert.Equal(0xD9, outBytes[^1]);
+        // The output must be no larger than the minimal JPEG fixture (no metadata, so a clean
+        // copy of MinimalJpeg is the expected size after junk is trimmed).
+        var minimal = FixtureFactory.MinimalJpeg();
+        Assert.Equal(minimal.Length, outBytes.Length);
+    }
+
+    [Fact]
     public void Strip_TruncatedJpeg_ThrowsAndLeavesOriginalUntouched()
     {
         var bytes = FixtureFactory.TruncatedJpeg();

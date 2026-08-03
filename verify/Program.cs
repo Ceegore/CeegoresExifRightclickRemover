@@ -23,8 +23,16 @@ internal static class Program
         var profile = Enum.Parse<StripProfile>(args[2], true);
 
         var bytes = File.ReadAllBytes(input);
-        File.WriteAllBytes(output, bytes); // touch output
-        File.WriteAllBytes(output, Array.Empty<byte>()); // clear
+
+        // D3: Do NOT pre-create or pre-clear the output file. The previous "touch then clear"
+        // block (File.WriteAllBytes(output, bytes) followed by File.WriteAllBytes(output, []))
+        // served no purpose — the stripper with overwriteSource=false picks a non-clashing
+        // sibling via AtomicFile.NextNonClashingPath, so a pre-existing output path is not
+        // what gets written to. Worse, if a caller passed the same path for input and output
+        // (e.g. an out-of-place test that the python harness doesn't currently do, but a
+        // future caller might), the touch step would overwrite the source and the clear
+        // step would then truncate it to zero bytes — destroying the input. Letting the
+        // stripper own the output path avoids both the no-op and the destruction.
 
         try
         {

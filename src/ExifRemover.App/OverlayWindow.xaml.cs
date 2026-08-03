@@ -50,9 +50,27 @@ public partial class OverlayWindow : Window
             : "Review metadata below, then click Remove.";
 
         _vm.IsBusy = true;
+        // D5: wrap the inspect call in a try/catch and surface any thrown exception on
+        // the UI thread. The previous Task.Run() did not observe exceptions, so if
+        // _vm.InspectAll() ever threw (the MetadataInspector already catches internally
+        // and returns an Error-bearing FileInspection, so this is currently theoretical —
+        // but a future MetadataExtractor version could throw, and the unobserved-task
+        // exception would silently leave IsBusy=true with the grid empty).
         Task.Run(() =>
         {
-            _vm.InspectAll();
+            try
+            {
+                _vm.InspectAll();
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    _vm.IsBusy = false;
+                    _vm.StatusText = $"Could not inspect files: {ex.Message}";
+                });
+                return;
+            }
             Dispatcher.Invoke(() => _vm.IsBusy = false);
         });
     }

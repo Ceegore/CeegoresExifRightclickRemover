@@ -199,6 +199,9 @@ public static class JpegMetadataStripper
     /// Copies the remainder of the input stream (the entropy-coded scan data, any subsequent
     /// progressive scans, and the trailing EOI) to the output verbatim. Validates that an EOI
     /// (0xFFD9) marker is present so a truncated scan is rejected rather than silently written.
+    /// Stops at the EOI: any bytes after the EOI in a malformed file are discarded, not
+    /// copied through (D4: silently appending garbage would have bloated the output and
+    /// broken the "lossless" guarantee on malformed inputs).
     /// </summary>
     private static void CopyRestVerbatim(FileStream input, FileStream output)
     {
@@ -208,21 +211,35 @@ public static class JpegMetadataStripper
         int n;
         while ((n = input.Read(buf, 0, buf.Length)) > 0)
         {
+            int writeLen = sawEoi ? 0 : n;
             if (!sawEoi)
             {
+                // Boundary case: the previous buffer ended in 0xFF and this buffer starts with 0xD9.
+                // The 0xFF was already written in the previous iteration; we only need to emit 0xD9.
                 if (prevByte == MarkerPrefix && buf[0] == 0xD9)
                 {
                     sawEoi = true;
+                    writeLen = 1;
                 }
-                for (int i = 1; i < n && !sawEoi; i++)
+                else
                 {
-                    if (buf[i - 1] == MarkerPrefix && buf[i] == 0xD9)
+                    for (int i = 1; i < n; i++)
                     {
-                        sawEoi = true;
+                        if (buf[i - 1] == MarkerPrefix && buf[i] == 0xD9)
+                        {
+                            sawEoi = true;
+                            // Write up to AND including the 0xD9 byte. Stop there.
+                            writeLen = i + 1;
+                            break;
+                        }
                     }
                 }
             }
-            output.Write(buf, 0, n);
+            if (writeLen > 0)
+            {
+                output.Write(buf, 0, writeLen);
+            }
+            if (sawEoi) break;
             prevByte = buf[n - 1];
         }
 

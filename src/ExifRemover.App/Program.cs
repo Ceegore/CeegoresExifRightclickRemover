@@ -121,11 +121,16 @@ public class App : Application
             return;
         }
 
-        // Surface dropped files to the user (and the parent terminal if any). Before this
-        // fix, only fully-unsupported selections were noticed; a 5-file right-click with
-        // 3 .txt + 2 .jpg would silently strip the 2 .jpg and pretend the other 3 never
-        // existed. We do not abort in that case — the user clearly intended to process
-        // the images they did select — but we make the dropped files visible.
+        // D1: build the overlay window FIRST, then set MainWindow, THEN surface the
+        // dropped-files notice. The previous order (notice first, window second) made
+        // `MainWindow is OverlayWindow mw` always false — MainWindow was still null at
+        // that point — so the overlay never showed the dropped-files notice. The
+        // console.Error line still fired, but the UI message was dead code. The
+        // contract that "unsupported files in a multi-select are visible" is now
+        // wired to actually show on the overlay.
+        var main = new OverlayWindow(filtered);
+        MainWindow = main;
+
         if (filtered.Count < paths.Count)
         {
             var dropped = new List<string>();
@@ -140,14 +145,9 @@ public class App : Application
             var msg = $"ExifRemover: ignored {dropped.Count} unsupported file(s): " +
                       string.Join(", ", dropped.ConvertAll(Path.GetFileName));
             Console.Error.WriteLine(msg);
-            if (MainWindow is OverlayWindow mw)
-            {
-                mw.SetNonFatalNotice(msg);
-            }
+            main.SetNonFatalNotice(msg);
         }
 
-        var main = new OverlayWindow(filtered);
-        MainWindow = main;
         main.Show();
     }
 
