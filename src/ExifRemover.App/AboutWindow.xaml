@@ -1,0 +1,47 @@
+<Window x:Class="ExifRemover.App.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About ExifRemover"
+        Width="520" Height="380"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#FAFAFA">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource HeaderText}" Text="ExifRemover" />
+        <TextBlock Grid.Row="1" x:Name="VersionText" Style="{StaticResource SubtleText}" Margin="0,2,0,0" />
+
+        <StackPanel Grid.Row="2" Margin="0,16,0,0">
+            <TextBlock TextWrapping="Wrap" Style="{StaticResource UiText}" Margin="0,0,0,8">
+                ExifRemover strips EXIF, IPTC, XMP, ICC profile, comments, and other metadata from JPEG and PNG images losslessly. The pixel data of your images is never modified.
+            </TextBlock>
+            <TextBlock TextWrapping="Wrap" Style="{StaticResource UiText}" Margin="0,0,0,8">
+                Runs entirely offline. No network calls. No telemetry. No accounts.
+            </TextBlock>
+            <TextBlock TextWrapping="Wrap" Style="{StaticResource UiText}" Margin="0,0,0,8">
+                Powered by the open-source
+                <Hyperlink NavigateUri="https://github.com/drewnoakes/metadata-extractor-dotnet" RequestNavigate="Hyperlink_RequestNavigate">
+                    MetadataExtractor
+                </Hyperlink>
+                library (Apache License 2.0, © Drew Noakes and contributors) for reading metadata.
+            </TextBlock>
+            <TextBlock TextWrapping="Wrap" Style="{StaticResource UiText}">
+                ExifRemover itself is licensed under AGPL-3.0-or-later. The metadata-rewriting code is original work.
+            </TextBlock>
+        </StackPanel>
+
+        <Separator Grid.Row="3" Margin="0,8,0,8" Background="#E0E0E0" />
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="OK" Style="{StaticResource PrimaryButton}" Click="Ok_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,154 @@
+<Window x:Class="ExifRemover.App.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ExifRemover.App"
+        Title="ExifRemover"
+        Width="{StaticResource OverlayWidth}"
+        Height="{StaticResource OverlayHeight}"
+        MinWidth="{StaticResource OverlayWidth}"
+        MinHeight="{StaticResource OverlayHeight}"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="NoResize"
+        ShowInTaskbar="True"
+        Background="#FAFAFA">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Style="{StaticResource HeaderText}" Text="ExifRemover" />
+                <TextBlock x:Name="SubtitleText" Style="{StaticResource SubtleText}" Margin="0,2,0,0"
+                           Text="Inspecting metadata..." />
+            </StackPanel>
+            <Button Grid.Column="1" x:Name="AboutButton" Content="?"
+                    Width="28" Height="28" VerticalAlignment="Top"
+                    Click="AboutButton_Click"
+                    ToolTip="About this tool" />
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                <TextBlock Style="{StaticResource SubtleText}" Text="File" Margin="2,0,0,4" />
+                <ComboBox x:Name="FileCombo"
+                          ItemsSource="{Binding Files}"
+                          SelectedItem="{Binding SelectedFile, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:FileEntryViewModel}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DisplayName}" />
+                                <TextBlock Style="{StaticResource SubtleText}" Margin="6,0,0,0"
+                                           Text="{Binding MetadataCount, StringFormat='({0} entries)'}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                <TextBlock Style="{StaticResource SubtleText}" Text="Strip profile" Margin="2,0,0,4" />
+                <ComboBox x:Name="ProfileCombo"
+                          ItemsSource="{Binding Profiles}"
+                          DisplayMemberPath="Title"
+                          SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                          ToolTip="{Binding SelectedProfile.ShortDescription}" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="240" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Style="{StaticResource SubtleText}"
+                       Text="{Binding ProfileLongDescription}"
+                       TextWrapping="Wrap" Margin="0,0,12,0" />
+            <TextBox Grid.Column="1" x:Name="FilterBox"
+                     VerticalAlignment="Top"
+                     Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                     ToolTip="Filter metadata by group, tag, or value" />
+        </Grid>
+
+        <Border Grid.Row="3" Margin="0,12,0,0" BorderBrush="#D8D8D8" BorderThickness="1" Background="White">
+            <DataGrid x:Name="EntriesGrid"
+                      ItemsSource="{Binding EntriesView}"
+                      AutoGenerateColumns="False"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal"
+                      HorizontalGridLinesBrush="#EFEFEF"
+                      RowHeaderWidth="0"
+                      AlternatingRowBackground="#F8F8F8"
+                      Background="White"
+                      BorderThickness="0"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      IsReadOnly="True"
+                      SelectionMode="Single"
+                      SelectionUnit="FullRow"
+                      FontFamily="{StaticResource MonoFontFamily}"
+                      FontSize="{StaticResource UiFontSizeSmall}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Group" Binding="{Binding Group}" Width="140" />
+                    <DataGridTextColumn Header="Tag" Binding="{Binding Name}" Width="180" />
+                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" />
+                    <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+                    <DataGridTextColumn Header="Action" Binding="{Binding Visibility}" Width="120" />
+                </DataGrid.Columns>
+                <DataGrid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Copy value" Click="CopyValue_Click" />
+                        <MenuItem Header="Copy row" Click="CopyRow_Click" />
+                    </ContextMenu>
+                </DataGrid.ContextMenu>
+            </DataGrid>
+        </Border>
+
+        <Grid Grid.Row="4" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="220" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" x:Name="StatusText" Style="{StaticResource SubtleText}"
+                       VerticalAlignment="Center"
+                       Text="{Binding StatusText}" />
+            <ProgressBar Grid.Column="1" x:Name="Progress"
+                         Minimum="0" Maximum="1"
+                         Value="{Binding ProgressValue, Mode=OneWay}"
+                         Height="6"
+                         Visibility="{Binding IsBusy, Converter={x:Static local:BoolToVisibilityConverter.Instance}}" />
+        </Grid>
+
+        <Grid Grid.Row="5" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <CheckBox Grid.Column="0" x:Name="OverwriteCheck"
+                      Content="Overwrite source (otherwise write &lt;name&gt;_stripped.&lt;ext&gt; beside it)"
+                      IsChecked="{Binding OverwriteSource, Mode=TwoWay}"
+                      VerticalAlignment="Center" />
+            <Button Grid.Column="2" x:Name="CancelButton"
+                    Content="Cancel" Style="{StaticResource SecondaryButton}"
+                    Margin="0,0,8,0" Click="CancelButton_Click" />
+            <Button Grid.Column="3" x:Name="RemoveButton"
+                    Content="Remove" Style="{StaticResource PrimaryButton}"
+                    IsDefault="True" Click="RemoveButton_Click" />
+        </Grid>
+    </Grid>
+</Window>
