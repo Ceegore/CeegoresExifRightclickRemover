@@ -45,10 +45,23 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        SubtitleText.Text = _vm.HasMultipleFiles
+        // D10: BaseSubtitle drives the bound SubtitleText TextBlock, so any non-fatal
+        // notice already set on the VM is automatically prepended. The previous code
+        // set SubtitleText.Text directly here, which overwrote the notice that
+        // SetNonFatalNotice had just put there (the notice was visible for only the
+        // few ms between main.Show() and this handler firing).
+        _vm.BaseSubtitle = _vm.HasMultipleFiles
             ? $"{_vm.Files.Count} files selected. Review metadata below, then click Remove to strip all."
             : "Review metadata below, then click Remove.";
 
+        // D11: disable Remove/Cancel while the initial inspect is running so a
+        // premature click can't race the snapshot capture. The CapturePreStripSnapshots
+        // call would otherwise see FileEntryViewModel.Inspection == null for every
+        // file and produce an empty snapshot, leaving the post-strip grid showing
+        // "0 entries removed" with no way to know what was actually in the files.
+        RemoveButton.IsEnabled = false;
+        CancelButton.IsEnabled = false;
+        ReInspectButton.IsEnabled = false;
         _vm.IsBusy = true;
         // D5: wrap the inspect call in a try/catch and surface any thrown exception on
         // the UI thread. The previous Task.Run() did not observe exceptions, so if
@@ -68,31 +81,48 @@ public partial class OverlayWindow : Window
                 {
                     _vm.IsBusy = false;
                     _vm.StatusText = $"Could not inspect files: {ex.Message}";
+                    RemoveButton.IsEnabled = true;
+                    CancelButton.IsEnabled = true;
+                    ReInspectButton.IsEnabled = true;
                 });
                 return;
             }
-            Dispatcher.Invoke(() => _vm.IsBusy = false);
+            Dispatcher.Invoke(() =>
+            {
+                _vm.IsBusy = false;
+                RemoveButton.IsEnabled = true;
+                CancelButton.IsEnabled = true;
+                ReInspectButton.IsEnabled = true;
+            });
         });
     }
 
     private void ShowFatal(string message)
     {
-        SubtitleText.Text = message;
-        StatusText.Text = message;
+        // D10: BaseSubtitle drives the bound SubtitleText, and StatusText is the VM-bound
+        // property — both will be displayed correctly without manual Text assignment.
+        _vm.BaseSubtitle = message;
+        _vm.StatusText = message;
         RemoveButton.IsEnabled = false;
+        CancelButton.IsEnabled = false;
+        ReInspectButton.IsEnabled = false;
     }
 
     /// <summary>
-    /// Displays a non-fatal notice (e.g. "ignored 3 unsupported files") in the status
-    /// strip without disabling Remove. The notice is overlaid on whatever the current
-    /// status text is so the user can still see the entry count.
+    /// Displays a non-fatal notice (e.g. "ignored 3 unsupported files") in both the
+    /// status strip and the subtitle, without disabling Remove. The notice is
+    /// persistent (D9/D10 fix): once set, the VM's StatusText and SubtitleText
+    /// getters always prepend it, so subsequent status updates (inspect counts,
+    /// progress messages, summaries) don't clobber the notice.
     /// </summary>
     public void SetNonFatalNotice(string notice)
     {
         if (string.IsNullOrEmpty(notice)) return;
-        // Prefix rather than replace: the current StatusText (entry count) is still useful.
-        StatusText.Text = $"{notice}  •  {StatusText.Text}";
-        SubtitleText.Text = notice;
+        // Set the VM property; the bound TextBlocks pick it up via PropertyChanged.
+        // The VM's StatusText and SubtitleText getters always prepend the notice, so
+        // the notice persists across every later status update (inspect counts,
+        // progress messages, post-strip summaries) — D9 fix.
+        _vm.NonFatalNotice = notice;
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
@@ -106,19 +136,65 @@ public partial class OverlayWindow : Window
         about.ShowDialog();
     }
 
+    /// <summary>
+    /// D14: re-inspect all files. The pre-strip snapshot (set after a Remove) is cleared
+    /// so the grid switches back to "live" entries — useful for confirming the post-strip
+    /// state (a successful strip makes every entry say "Would be removed", which is the
+    /// exact opposite of what a re-inspect shows: "no metadata in this file").
+    /// </summary>
+    private void ReInspectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vm.IsBusy) return;
+        ReInspectButton.IsEnabled = false;
+        _vm.IsBusy = true;
+        Task.Run(() =>
+        {
+            try
+            {
+                _vm.Reinspect();
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    _vm.StatusText = $"Could not re-inspect: {ex.Message}";
+                });
+            }
+            Dispatcher.Invoke(() =>
+            {
+                _vm.IsBusy = false;
+                ReInspectButton.IsEnabled = true;
+            });
+        });
+    }
+
     private void CopyValue_Click(object sender, RoutedEventArgs e)
     {
-        if (EntriesGrid.SelectedItem is EntryRow row)
+        if (EntriesGrid.SelectedItem is not EntryRow row) return;
+        // D13: Clipboard.SetText can throw COMException if another process holds the
+        // clipboard (rare, but possible — e.g. another app is mid-paste). Surface
+        // the error in the status strip rather than letting it crash the overlay.
+        try
         {
             Clipboard.SetText(row.Value ?? string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _vm.StatusText = $"Could not copy to clipboard: {ex.Message}";
         }
     }
 
     private void CopyRow_Click(object sender, RoutedEventArgs e)
     {
-        if (EntriesGrid.SelectedItem is EntryRow row)
+        if (EntriesGrid.SelectedItem is not EntryRow row) return;
+        // D13: see CopyValue_Click — clipboard can throw COMException.
+        try
         {
             Clipboard.SetText($"{row.Group}\t{row.Name}\t{row.Value}");
+        }
+        catch (Exception ex)
+        {
+            _vm.StatusText = $"Could not copy to clipboard: {ex.Message}";
         }
     }
 
@@ -150,6 +226,7 @@ public partial class OverlayWindow : Window
 
         RemoveButton.IsEnabled = false;
         CancelButton.IsEnabled = false;
+        ReInspectButton.IsEnabled = false;
         _vm.IsBusy = true;
         _vm.ProgressValue = 0;
 
@@ -174,6 +251,7 @@ public partial class OverlayWindow : Window
                     _vm.StatusText = $"Strip failed: {ex.Message}";
                     RemoveButton.IsEnabled = true;
                     CancelButton.IsEnabled = true;
+                    ReInspectButton.IsEnabled = true;
                 });
                 return;
             }
@@ -187,11 +265,11 @@ public partial class OverlayWindow : Window
                 // Re-enable the controls so the window is usable again after a strip.
                 RemoveButton.IsEnabled = true;
                 CancelButton.IsEnabled = true;
+                ReInspectButton.IsEnabled = true;
                 // The pre-strip snapshot (captured in RunRemove before the strip) is
                 // rendered by RebuildCurrentEntries until the user explicitly re-inspects
-                // a file. No re-inspection here — the freshly stripped files are now
-                // empty and would render as "no metadata", which is what the user already
-                // saw. The snapshot gives them a meaningful summary of what was removed.
+                // a file. The "↻" button in the header (D14 fix) clears the snapshot
+                // and re-inspects so the user can confirm the post-strip state.
             });
         });
     }

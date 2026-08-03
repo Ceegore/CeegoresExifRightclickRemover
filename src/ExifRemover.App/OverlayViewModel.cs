@@ -198,12 +198,63 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
     private string _statusText = string.Empty;
     public string StatusText
     {
-        get => _statusText;
+        // D9: the getter returns the "base" status with the non-fatal notice prepended
+        // (when one is set). The setter stores only the base; the full value is
+        // computed here so the XAML binding always reflects the current notice. The
+        // previous code modified XAML StatusText.Text directly from the window code,
+        // which the next VM update immediately overwrote — making the dropped-files
+        // notice invisible to the user in practice.
+        get => string.IsNullOrEmpty(_nonFatalNotice) ? _statusText : $"{_nonFatalNotice}  •  {_statusText}";
         set
         {
             if (_statusText == value) return;
             _statusText = value;
             OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Optional, persistent non-fatal notice (e.g. "ignored 3 unsupported files").
+    /// When set, it is prepended to both the status text and the subtitle text and
+    /// stays visible for the entire overlay session. Cleared by re-applying the
+    /// empty string from the caller if needed; the window code treats it as
+    /// "one-shot, sticky" — D9/D10 fix the previous behavior where the notice
+    /// was overwritten by the very next VM update.
+    /// </summary>
+    private string _nonFatalNotice = string.Empty;
+    public string NonFatalNotice
+    {
+        get => _nonFatalNotice;
+        set
+        {
+            if (_nonFatalNotice == value) return;
+            _nonFatalNotice = value;
+            OnPropertyChanged(nameof(StatusText));
+            OnPropertyChanged(nameof(SubtitleText));
+        }
+    }
+
+    /// <summary>
+    /// Subtitle text shown at the top of the overlay. Composed of the (optional)
+    /// non-fatal notice prepended to the base subtitle — D10: previously set as a
+    /// raw XAML TextBlock from the window code, which the Loaded handler then
+    /// overwrote, making the notice invisible.
+    /// </summary>
+    public string SubtitleText => string.IsNullOrEmpty(_nonFatalNotice)
+        ? _baseSubtitle
+        : string.IsNullOrEmpty(_baseSubtitle)
+            ? _nonFatalNotice
+            : $"{_nonFatalNotice}  •  {_baseSubtitle}";
+
+    private string _baseSubtitle = "Inspecting metadata...";
+    public string BaseSubtitle
+    {
+        get => _baseSubtitle;
+        set
+        {
+            if (_baseSubtitle == value) return;
+            _baseSubtitle = value;
+            OnPropertyChanged(nameof(SubtitleText));
         }
     }
 
@@ -256,6 +307,19 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
     {
         if (PreStripSnapshots.Count == 0) return;
         PreStripSnapshots.Clear();
+    }
+
+    /// <summary>
+    /// D14: re-inspect all files. Clears the pre-strip snapshot (so the grid switches
+    /// back to "live" entries), then re-runs the inspect. Used after a strip so the
+    /// user can confirm the post-strip state ("now empty" for a successful strip) or
+    /// refresh after a file was changed externally. Safe to call any time; the actual
+    /// I/O runs off-thread via the same InspectAll path as the initial load.
+    /// </summary>
+    public void Reinspect()
+    {
+        ClearPreStripSnapshots();
+        InspectAll();
     }
 
     public void InspectAll()

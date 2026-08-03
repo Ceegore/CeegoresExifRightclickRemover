@@ -112,11 +112,19 @@ public class App : Application
             return;
         }
 
-        var filtered = FilterSupported(paths);
-        if (filtered.Count == 0)
+        // D12: use the Engine-side PathFilter so invalid paths are reported with a
+        // reason instead of silently dropped (the previous FilterSupported caught
+        // every exception and reported the failure as if the file were an unsupported
+        // type — a path with a null byte would just vanish from the dropped-files
+        // message).
+        var filterResult = PathFilter.FilterImagePaths(paths);
+        if (filterResult.Kept.Count == 0)
         {
+            // All inputs were dropped — tell the user why.
+            var reasons = string.Join("; ", filterResult.Dropped.Select(d =>
+                $"{Path.GetFileName(d.Path) ?? d.Path} ({d.Reason})"));
             Console.Error.WriteLine(
-                "ExifRemover: none of the selected files are supported. Only .jpg, .jpeg, and .png are.");
+                $"ExifRemover: none of the selected files could be processed. {reasons}. Only .jpg, .jpeg, and .png are supported.");
             Shutdown(2);
             return;
         }
@@ -128,48 +136,17 @@ public class App : Application
         // console.Error line still fired, but the UI message was dead code. The
         // contract that "unsupported files in a multi-select are visible" is now
         // wired to actually show on the overlay.
-        var main = new OverlayWindow(filtered);
+        var main = new OverlayWindow(filterResult.Kept);
         MainWindow = main;
 
-        if (filtered.Count < paths.Count)
+        if (filterResult.Dropped.Count > 0)
         {
-            var dropped = new List<string>();
-            var kept = new HashSet<string>(filtered, StringComparer.OrdinalIgnoreCase);
-            foreach (var p in paths)
-            {
-                if (!kept.Contains(p))
-                {
-                    dropped.Add(p);
-                }
-            }
-            var msg = $"ExifRemover: ignored {dropped.Count} unsupported file(s): " +
-                      string.Join(", ", dropped.ConvertAll(Path.GetFileName));
+            var msg = $"ExifRemover: ignored {filterResult.Dropped.Count} unsupported file(s): " +
+                      string.Join(", ", filterResult.Dropped.Select(d => Path.GetFileName(d.Path) ?? d.Path));
             Console.Error.WriteLine(msg);
             main.SetNonFatalNotice(msg);
         }
 
         main.Show();
-    }
-
-    private static List<string> FilterSupported(IEnumerable<string> paths)
-    {
-        var list = new List<string>();
-        foreach (var p in paths)
-        {
-            try
-            {
-                var ext = Path.GetExtension(p);
-                if (string.Equals(ext, ".jpg", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(ext, ".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase))
-                {
-                    list.Add(Path.GetFullPath(p));
-                }
-            }
-            catch
-            {
-            }
-        }
-        return list;
     }
 }

@@ -26,13 +26,18 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Style="{StaticResource HeaderText}" Text="ExifRemover" />
                 <TextBlock x:Name="SubtitleText" Style="{StaticResource SubtleText}" Margin="0,2,0,0"
-                           Text="Inspecting metadata..." />
+                           Text="{Binding SubtitleText}" />
             </StackPanel>
-            <Button Grid.Column="1" x:Name="AboutButton" Content="?"
+            <Button Grid.Column="1" x:Name="ReInspectButton" Content="↻"
+                    Width="28" Height="28" Margin="0,0,6,0" VerticalAlignment="Top"
+                    Click="ReInspectButton_Click"
+                    ToolTip="Re-inspect all files (refresh the metadata view)" />
+            <Button Grid.Column="2" x:Name="AboutButton" Content="?"
                     Width="28" Height="28" VerticalAlignment="Top"
                     Click="AboutButton_Click"
                     ToolTip="About this tool" />
