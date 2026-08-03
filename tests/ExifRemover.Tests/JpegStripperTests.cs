@@ -245,16 +245,22 @@ public class JpegStripperTests : IDisposable
     [Fact]
     public void Strip_RandomFuzzInput_NeverThrowsForValidJpegHeader()
     {
-        // Fuzz: 100 iterations, random JPEG-like inputs with valid SOI.
+        // Fuzz: 100 iterations of random JPEG-like inputs. The bytes are randomized
+        // FIRST, then the first three are overwritten with a valid SOI / SOI-marker
+        // prefix so the stripper enters the segment-walk loop. (The previous version
+        // of this test set the SOI BEFORE rng.NextBytes, which clobbered it; the
+        // test was almost never actually exercising a valid-JPEG fuzz path. See
+        // _temp11.md "H1" for the audit's catch of that bug — the audit added new
+        // C1/C3 regression tests but did not fix the fuzz test itself.)
         var rng = new Random(42);
         for (int i = 0; i < 100; i++)
         {
             var bytes = new byte[rng.Next(100, 8192)];
+            rng.NextBytes(bytes);
+            // Now stamp a valid SOI prefix on top of the random payload.
             bytes[0] = 0xFF;
             bytes[1] = 0xD8;
             bytes[2] = 0xFF;
-            // Sprinkle some 0xFF bytes to exercise the marker boundary handling.
-            rng.NextBytes(bytes);
             var src = WriteTemp(bytes, $"er-fuzz-{Guid.NewGuid():N}.jpg");
             var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.jpg");
             _tempFiles.Add(outPath);

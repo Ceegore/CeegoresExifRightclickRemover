@@ -61,4 +61,47 @@ public class StripPipelineTests : IDisposable
         Assert.Single(report.Failures);
         Assert.Equal(bogus, report.Failures[0].Path);
     }
+
+    [Fact]
+    public void BatchStripReport_SuccessCount_EqualsResultsCount()
+    {
+        // B7 / L2: SuccessCount used to be a "non-empty output" check, which would
+        // have mis-classified a corrupt-but-nonempty output as success. The fix makes
+        // SuccessCount == Results.Count: a StripResult in Results means the stripper
+        // returned cleanly (any exception goes to Failures, not Results).
+        var jpg = Path.Combine(Path.GetTempPath(), $"er-sc-{Guid.NewGuid():N}.jpg");
+        File.WriteAllBytes(jpg, FixtureFactory.JpegWithExifXmpIccAndComment());
+        _tempFiles.Add(jpg);
+
+        var bare = Path.Combine(Path.GetTempPath(), $"er-sc-bare-{Guid.NewGuid():N}.jpg");
+        File.WriteAllBytes(bare, FixtureFactory.MinimalJpeg());
+        _tempFiles.Add(bare);
+
+        var report = StripPipeline.StripBatch(new[] { jpg, bare }, overwriteSource: false, StripProfile.Privacy);
+        Assert.Equal(2, report.Results.Count);
+        Assert.Equal(2, report.SuccessCount);
+        Assert.Empty(report.Failures);
+
+        // ChangedCount distinguishes "actually removed something" from "ran cleanly
+        // but the file was already clean".
+        Assert.Equal(1, report.ChangedCount); // jpg dropped segments, bare did not
+    }
+
+    [Fact]
+    public void BatchStripReport_SuccessCount_ExcludesFailures()
+    {
+        // A failure is recorded in Failures (not Results), so SuccessCount must NOT
+        // include it. This pins the "result object = success" contract.
+        var jpg = Path.Combine(Path.GetTempPath(), $"er-mixed-{Guid.NewGuid():N}.jpg");
+        File.WriteAllBytes(jpg, FixtureFactory.JpegWithExifXmpIccAndComment());
+        _tempFiles.Add(jpg);
+
+        var bogus = Path.Combine(Path.GetTempPath(), $"er-mixed-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(bogus, "not an image");
+        _tempFiles.Add(bogus);
+
+        var report = StripPipeline.StripBatch(new[] { jpg, bogus }, overwriteSource: false, StripProfile.Privacy);
+        Assert.Equal(1, report.SuccessCount);
+        Assert.Single(report.Failures);
+    }
 }

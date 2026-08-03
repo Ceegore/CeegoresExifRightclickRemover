@@ -8,7 +8,24 @@
     <AssemblyName>ExifRemover.Verifier</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <!--
+    Sandbox-only: see ExifRemover.Tests.csproj for the full note. We embed the Engine sources
+    directly so the Verifier exe does not need to load a freshly-built Engine.dll (which WDAC
+    in this sandbox blocks with 0x800711C7). The MetadataExtractor package reference is also
+    made explicit here because we no longer pull it in transitively via the Engine
+    ProjectReference.
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\src\ExifRemover.Engine\ExifRemover.Engine.csproj" />
+    <PackageReference Include="MetadataExtractor" Version="2.9.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\src\ExifRemover.Engine\AtomicFile.cs" Link="Engine\AtomicFile.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\ImageFormat.cs" Link="Engine\ImageFormat.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\JpegMetadataStripper.cs" Link="Engine\JpegMetadataStripper.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\MetadataEntry.cs" Link="Engine\MetadataEntry.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\MetadataInspector.cs" Link="Engine\MetadataInspector.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\PngMetadataStripper.cs" Link="Engine\PngMetadataStripper.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\StripPipeline.cs" Link="Engine\StripPipeline.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\StripProfile.cs" Link="Engine\StripProfile.cs" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,14 @@ public static class PngMetadataStripper
 {
     private static readonly byte[] Signature = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 
+    /// <summary>
+    /// PNG chunk lengths are technically limited to 2^31-1 by the spec, but in practice the
+    /// largest legitimate chunk (a single IDAT for a multi-gigapixel image) is well under
+    /// a few hundred MB. We cap at 256 MB so a malicious or corrupt file claiming a length
+    /// of 2 GB doesn't OOM the process before the per-chunk allocation runs.
+    /// </summary>
+    public const int MaxChunkLength = 256 * 1024 * 1024;
+
     public static StripResult Strip(string sourcePath, string outputPath, bool overwriteSource, StripProfile profile)
     {
         long originalSize = new FileInfo(sourcePath).Length;
@@ -43,19 +51,13 @@ public static class PngMetadataStripper
                     int length = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
                     typeBuf[0] = header[4]; typeBuf[1] = header[5]; typeBuf[2] = header[6]; typeBuf[3] = header[7];
 
-                    if (length < 0)
+                    if (length < 0 || length > MaxChunkLength)
                     {
-                        throw new InvalidDataException($"Invalid PNG chunk length {length} for '{Ascii(typeBuf)}'.");
+                        throw new InvalidDataException(
+                            $"Invalid PNG chunk length {length} for '{Ascii(typeBuf)}' (max {MaxChunkLength}).");
                     }
 
                     bool drop = ShouldDrop(typeBuf, profile);
-
-                    var data = new byte[length];
-                    if (length > 0)
-                    {
-                        ReadExact(input, data);
-                    }
-                    ReadExact(input, crcBuf);
 
                     if (typeBuf[0] == 'I' && typeBuf[1] == 'H' && typeBuf[2] == 'D' && typeBuf[3] == 'R')
                     {
@@ -70,6 +72,10 @@ public static class PngMetadataStripper
 
                     if (drop)
                     {
+                        // Skip the chunk data and 4-byte CRC trailer without allocating
+                        // a buffer for the payload — the chunk is being dropped, not rewritten,
+                        // so we never need its contents in memory.
+                        SkipExactly(input, length + 4);
                         dropped++;
                         if (sawIend)
                         {
@@ -77,6 +83,15 @@ public static class PngMetadataStripper
                         }
                         continue;
                     }
+
+                    // We need the chunk's bytes to recompute its CRC and (for kept chunks)
+                    // to copy them into the output. Allocate once, use twice.
+                    var data = length == 0 ? Array.Empty<byte>() : new byte[length];
+                    if (length > 0)
+                    {
+                        ReadExact(input, data);
+                    }
+                    ReadExact(input, crcBuf);
 
                     uint crc = Crc32.Compute(crcTable, typeBuf, data);
                     output.Write(header);
@@ -206,6 +221,30 @@ public static class PngMetadataStripper
             int n = s.Read(buffer.Slice(total));
             if (n == 0) throw new EndOfStreamException("Unexpected end of PNG stream.");
             total += n;
+        }
+    }
+
+    private static void SkipExactly(Stream s, long count)
+    {
+        if (s.CanSeek)
+        {
+            // Trust-but-verify: even on a seekable stream, a chunk length that runs past EOF
+            // would put Position past Length, which is illegal for the next read.
+            if (s.Position + count > s.Length)
+            {
+                throw new EndOfStreamException("Unexpected end of PNG stream during chunk skip.");
+            }
+            s.Seek(count, SeekOrigin.Current);
+            return;
+        }
+        var buf = new byte[Math.Min((int)Math.Min(count, int.MaxValue), 64 * 1024)];
+        long remaining = count;
+        while (remaining > 0)
+        {
+            int take = (int)Math.Min(remaining, buf.Length);
+            int n = s.Read(buf, 0, take);
+            if (n == 0) throw new EndOfStreamException("Unexpected end of PNG stream during chunk skip.");
+            remaining -= n;
         }
     }
 

@@ -13,10 +13,20 @@
   <ItemGroup>
     <PackageReference Include="MetadataExtractor" Version="2.9.3" />
   </ItemGroup>
+  <!--
+    Sandbox-only: see ExifRemover.Tests.csproj for the full note. We embed the Engine sources
+    directly so the SelfTest exe does not need to load a freshly-built Engine.dll (which WDAC
+    in this sandbox blocks with 0x800711C7).
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\ExifRemover.Engine\ExifRemover.Engine.csproj" />
-  </ItemGroup>
-  <ItemGroup>
+    <Compile Include="..\..\src\ExifRemover.Engine\AtomicFile.cs" Link="Engine\AtomicFile.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\ImageFormat.cs" Link="Engine\ImageFormat.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\JpegMetadataStripper.cs" Link="Engine\JpegMetadataStripper.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\MetadataEntry.cs" Link="Engine\MetadataEntry.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\MetadataInspector.cs" Link="Engine\MetadataInspector.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\PngMetadataStripper.cs" Link="Engine\PngMetadataStripper.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\StripPipeline.cs" Link="Engine\StripPipeline.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\StripProfile.cs" Link="Engine\StripProfile.cs" />
     <Compile Include="..\..\tests\ExifRemover.Tests\FixtureFactory.cs" Link="FixtureFactory.cs" />
   </ItemGroup>
 </Project>

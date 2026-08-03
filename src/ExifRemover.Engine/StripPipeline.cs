@@ -82,8 +82,20 @@ public sealed class BatchStripReport
 {
     public required IReadOnlyList<StripResult> Results { get; init; }
     public required IReadOnlyList<(string Path, string Error)> Failures { get; init; }
-    public int SuccessCount => Results.Count(r => !r.Changed || r.OutputSizeBytes > 0);
+
+    /// <summary>
+    /// Number of files for which the stripper returned a StripResult (i.e. a result object —
+    /// not an exception). "Changed" or "unchanged" both count; a corrupt-but-nonempty output
+    /// (the historical L2 footgun) is intentionally NOT singled out here: the byte-stuffing and
+    /// C1/C2 regressions are guarded by the real-image verifier and the xUnit regression tests,
+    /// not by a counter that would happily mis-classify them. A real success is recorded
+    /// per-file in <see cref="Results"/>; failures are in <see cref="Failures"/>.
+    /// </summary>
+    public int SuccessCount => Results.Count;
+
+    /// <summary>Number of files that were actually modified by the stripper (something was dropped).</summary>
     public int ChangedCount => Results.Count(r => r.Changed);
+
     public long TotalOriginalBytes => Results.Sum(r => r.OriginalSizeBytes);
     public long TotalOutputBytes => Results.Sum(r => r.OutputSizeBytes);
     public long TotalSavedBytes => Math.Max(0, TotalOriginalBytes - TotalOutputBytes);

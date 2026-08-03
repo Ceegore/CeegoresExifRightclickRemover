@@ -191,6 +191,60 @@ internal static class FixtureFactory
     }
 
     /// <summary>
+    /// PNG that includes every ancillary chunk the stripper ALWAYS keeps regardless of
+    /// profile (pHYs, bKGD, sBIT, tRNS) plus the always-dropped text/time/eXIf/iCCP.
+    /// Used by Strip_AlwaysKeepsPngPhysBkgdSbitTrns_AcrossAllProfiles to verify the
+    /// engine side of the B2 fix: the stripper never drops these chunks under any
+    /// profile, even AllMetadata.
+    /// </summary>
+    public static byte[] PngWithAlwaysKeptAncillaryChunks()
+    {
+        var ms = new MemoryStream();
+        var bw = new BinaryWriter(ms);
+        bw.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+
+        WritePngChunk(bw, "IHDR", new byte[]
+        {
+            0x00,0x00,0x00,0x04,
+            0x00,0x00,0x00,0x04,
+            0x08,0x02,0x00,0x00,0x00
+        });
+
+        // pHYs: 4 bytes pixels-per-unit-X, 4 bytes pixels-per-unit-Y, 1 byte unit specifier
+        WritePngChunk(bw, "pHYs", new byte[] { 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x01 });
+
+        // bKGD: 2-byte palette index (for color type 3) — index 0 transparent
+        WritePngChunk(bw, "bKGD", new byte[] { 0x00, 0x00 });
+
+        // sBIT: 3 bytes (one per channel) — significant bits per sample
+        WritePngChunk(bw, "sBIT", new byte[] { 0x08, 0x08, 0x08 });
+
+        // tRNS: 2-byte transparent palette index
+        WritePngChunk(bw, "tRNS", new byte[] { 0x00, 0x00 });
+
+        // Add a privacy chunk (tEXt) so we can verify "always-kept" survives the strip.
+        var t = new List<byte>();
+        t.AddRange(Encoding.ASCII.GetBytes("Software"));
+        t.Add(0);
+        t.AddRange(Encoding.UTF8.GetBytes("TestSoft 1.0"));
+        WritePngChunk(bw, "tEXt", t.ToArray());
+
+        WritePngChunk(bw, "IDAT", new byte[]
+        {
+            0x78, 0x01, 0x01, 0x06, 0x00, 0xFB, 0xFF, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x04, 0x6A, 0x6F, 0xC2, 0x68
+        });
+
+        WritePngChunk(bw, "IEND", Array.Empty<byte>());
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// Truncated PNG: signature + IHDR + nothing else.
     /// </summary>
     public static byte[] TruncatedPng()

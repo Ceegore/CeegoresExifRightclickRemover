@@ -64,6 +64,19 @@ public partial class OverlayWindow : Window
         RemoveButton.IsEnabled = false;
     }
 
+    /// <summary>
+    /// Displays a non-fatal notice (e.g. "ignored 3 unsupported files") in the status
+    /// strip without disabling Remove. The notice is overlaid on whatever the current
+    /// status text is so the user can still see the entry count.
+    /// </summary>
+    public void SetNonFatalNotice(string notice)
+    {
+        if (string.IsNullOrEmpty(notice)) return;
+        // Prefix rather than replace: the current StatusText (entry count) is still useful.
+        StatusText.Text = $"{notice}  •  {StatusText.Text}";
+        SubtitleText.Text = notice;
+    }
+
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
@@ -111,6 +124,11 @@ public partial class OverlayWindow : Window
             if (!confirm.Confirmed) return;
             if (confirm.DontAskAgainSession) _sessionDontAsk = true;
         }
+
+        // Snapshot the per-file inspection state BEFORE the strip wipes the in-memory
+        // entries. After the strip, RebuildCurrentEntries renders the snapshot rows
+        // (all marked "Would be removed") so the user can see what was actually taken out.
+        _vm.CapturePreStripSnapshots();
 
         RemoveButton.IsEnabled = false;
         CancelButton.IsEnabled = false;

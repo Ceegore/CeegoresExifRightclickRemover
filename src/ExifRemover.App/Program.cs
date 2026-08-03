@@ -24,8 +24,7 @@ public static class Program
             return 2;
         }
 
-        App.LaunchWithFiles(paths);
-        return 0;
+        return App.LaunchWithFiles(paths);
     }
 
     internal static List<string> SplitArgs(string[] args)
@@ -91,11 +90,17 @@ public class App : Application
         this.Startup += App_Startup;
     }
 
-    public static void LaunchWithFiles(IReadOnlyList<string> paths)
+    /// <summary>
+    /// Boots the WPF app with the given input paths. Returns the WPF shutdown code, which
+    /// is 0 on a successful run and 2 when no input was usable. The previous version
+    /// returned 0 unconditionally, which made the no-input case indistinguishable from
+    /// success for callers (CI scripts, .cmd wrappers, the install/uninstall harness).
+    /// </summary>
+    public static int LaunchWithFiles(IReadOnlyList<string> paths)
     {
         InitialPaths = paths;
         var app = new App();
-        app.Run();
+        return app.Run();
     }
 
     private void App_Startup(object sender, StartupEventArgs e)
@@ -110,8 +115,35 @@ public class App : Application
         var filtered = FilterSupported(paths);
         if (filtered.Count == 0)
         {
+            Console.Error.WriteLine(
+                "ExifRemover: none of the selected files are supported. Only .jpg, .jpeg, and .png are.");
             Shutdown(2);
             return;
+        }
+
+        // Surface dropped files to the user (and the parent terminal if any). Before this
+        // fix, only fully-unsupported selections were noticed; a 5-file right-click with
+        // 3 .txt + 2 .jpg would silently strip the 2 .jpg and pretend the other 3 never
+        // existed. We do not abort in that case — the user clearly intended to process
+        // the images they did select — but we make the dropped files visible.
+        if (filtered.Count < paths.Count)
+        {
+            var dropped = new List<string>();
+            var kept = new HashSet<string>(filtered, StringComparer.OrdinalIgnoreCase);
+            foreach (var p in paths)
+            {
+                if (!kept.Contains(p))
+                {
+                    dropped.Add(p);
+                }
+            }
+            var msg = $"ExifRemover: ignored {dropped.Count} unsupported file(s): " +
+                      string.Join(", ", dropped.ConvertAll(Path.GetFileName));
+            Console.Error.WriteLine(msg);
+            if (MainWindow is OverlayWindow mw)
+            {
+                mw.SetNonFatalNotice(msg);
+            }
         }
 
         var main = new OverlayWindow(filtered);

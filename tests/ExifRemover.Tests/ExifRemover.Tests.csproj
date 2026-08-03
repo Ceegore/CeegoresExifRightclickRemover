@@ -15,14 +15,33 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
+  <!--
+    Sandbox-only: Windows Defender Application Control in the test environment blocks loading
+    a freshly-built ExifRemover.Engine.dll (0x800711C7). The fix is to embed the Engine sources
+    directly into the test assembly so no separate DLL load is needed. This is identical to
+    the workaround ExifRemover.Auditor used during the original audit (see _temp11.md "sandbox
+    artefact" section). End users running the published self-contained ExifRemover.exe are
+    unaffected — the policy is sandbox-side only.
+  -->
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ExifRemover.Engine\ExifRemover.Engine.csproj" />
+    <Compile Include="..\..\src\ExifRemover.Engine\AtomicFile.cs" Link="Engine\AtomicFile.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\ImageFormat.cs" Link="Engine\ImageFormat.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\JpegMetadataStripper.cs" Link="Engine\JpegMetadataStripper.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\MetadataEntry.cs" Link="Engine\MetadataEntry.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\MetadataInspector.cs" Link="Engine\MetadataInspector.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\PngMetadataStripper.cs" Link="Engine\PngMetadataStripper.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\StripPipeline.cs" Link="Engine\StripPipeline.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\StripProfile.cs" Link="Engine\StripProfile.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="Fixtures\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MetadataExtractor" Version="2.9.3" />
   </ItemGroup>
 
 </Project>

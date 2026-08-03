@@ -38,6 +38,18 @@ public static class MetadataInspector
             {
                 MapDirectory(dir, entries);
             }
+
+            // MetadataExtractor's PNG reader doesn't surface eXIf as a separate group — it
+            // rolls eXIf into the PngText bucket. The stripper, however, drops eXIf chunks
+            // independently of tEXt, so the user would otherwise see a PNG with an embedded
+            // EXIF block silently disappear. Run a small byte-level PNG probe and add a
+            // PngExif entry whenever an eXIf chunk is actually present, so the grid is honest
+            // about what the stripper will remove.
+            if (format == ImageFormat.Png)
+            {
+                PngChunkProbe.ProbeForMissingEntries(path, entries);
+            }
+
             return new FileInspection
             {
                 Path = path,
@@ -175,5 +187,84 @@ public static class MetadataInspector
         {
             return 0;
         }
+    }
+}
+
+/// <summary>
+/// One-pass byte-level scan of a PNG file's chunks. Used to surface metadata chunks that
+/// <see cref="MetadataExtractor"/> rolls into a generic bucket (eXIf specifically — MetadataExtractor
+/// surfaces both tEXt and eXIf under PngText, hiding the fact that the stripper will drop the
+/// eXIf block too). Keeps the review grid honest about what will actually be removed.
+/// </summary>
+internal static class PngChunkProbe
+{
+    private static readonly byte[] PngSignature = new byte[]
+    {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+    };
+
+    public static void ProbeForMissingEntries(string path, List<MetadataEntry> sink)
+    {
+        // Only add an entry if MetadataExtractor didn't already surface one. Today the
+        // gap is eXIf; if MetadataExtractor ever adds separate surfacing, this becomes a no-op.
+        if (sink.Any(e => e.Group == MetadataGroups.PngExif))
+        {
+            return;
+        }
+
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
+            Span<byte> sig = stackalloc byte[8];
+            Span<byte> header = stackalloc byte[8];
+            int n = fs.Read(sig);
+            if (n < 8 || !sig.SequenceEqual(PngSignature))
+            {
+                return;
+            }
+
+            while (true)
+            {
+                if (TryReadExact(fs, header) < 8) return;
+
+                int length = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
+                if (length < 0 || length > int.MaxValue) return; // malformed
+                var type = new string(new[] { (char)header[4], (char)header[5], (char)header[6], (char)header[7] });
+
+                if (type == "eXIf")
+                {
+                    sink.Add(new MetadataEntry(
+                        MetadataGroups.PngExif,
+                        "EXIF block",
+                        $"Embedded EXIF data ({length} bytes)",
+                        EstimatedSizeBytes: length,
+                        IsPrivacySensitive: true));
+                }
+
+                // Advance past the chunk data and the 4-byte CRC trailer.
+                long skip = (long)length + 4;
+                if (fs.Position + skip > fs.Length) return;
+                fs.Seek(skip, SeekOrigin.Current);
+
+                if (type == "IEND") return;
+            }
+        }
+        catch
+        {
+            // Probe failures must NEVER fail an inspect: a user inspecting a slightly-malformed
+            // PNG should still see the MetadataExtractor entries, just without the eXIf hint.
+        }
+    }
+
+    private static int TryReadExact(Stream s, Span<byte> buffer)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            int read = s.Read(buffer.Slice(total));
+            if (read == 0) return total;
+            total += read;
+        }
+        return total;
     }
 }

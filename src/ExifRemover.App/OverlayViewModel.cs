@@ -111,12 +111,22 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         }
         else if (format == ImageFormat.Png)
         {
+            // Chunks the stripper ALWAYS keeps regardless of profile (must mirror
+            // PngMetadataStripper.ShouldDrop, which never returns true for these types).
+            set.Add("PNGPHYS");
+            set.Add("PNGBKGD");
+            set.Add("PNGSBIT");
+            set.Add("PNGTRNS");
+
+            // Color-management chunks: kept under Privacy/Minimal, stripped under AllMetadata.
             if (profile != StripProfile.AllMetadata)
             {
                 set.Add("PNGSRGB");
                 set.Add("PNGCHRM");
                 set.Add("PNGGAMA");
             }
+
+            // iCCP and hIST: kept only under Minimal.
             if (profile == StripProfile.Minimal)
             {
                 set.Add("PNGICCP");
@@ -280,17 +290,15 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         // If a pre-strip snapshot is active, the snapshot is the source of truth.
         if (PreStripSnapshots.TryGetValue(SelectedFile.Path, out var snap))
         {
-            var visible = VisibleEntryCount;
             StatusText = snap.Count == 0
                 ? "No metadata in this file."
-                : $"{visible} of {snap.Count} entries shown (last strip removed all).";
+                : $"{VisibleEntryCount} of {snap.Count} entries shown (last strip removed all).";
             return;
         }
         var total = SelectedFile.Inspection?.Entries.Count ?? 0;
-        var visible = VisibleEntryCount;
         StatusText = total == 0
             ? "No metadata in this file."
-            : $"{visible} of {total} entries shown.";
+            : $"{VisibleEntryCount} of {total} entries shown.";
     }
 
     private void RebuildCurrentEntries()
@@ -350,6 +358,10 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         if (entry.Group == MetadataGroups.PngSrgb) return "PNGSRGB";
         if (entry.Group == MetadataGroups.PngChrm) return "PNGCHRM";
         if (entry.Group == MetadataGroups.PngGama) return "PNGGAMA";
+        if (entry.Group == MetadataGroups.PngPhys) return "PNGPHYS";
+        if (entry.Group == MetadataGroups.PngBkgd) return "PNGBKGD";
+        if (entry.Group == MetadataGroups.PngSbit) return "PNGSBIT";
+        if (entry.Group == MetadataGroups.PngTrns) return "PNGTRNS";
         return entry.Group;
     }
 

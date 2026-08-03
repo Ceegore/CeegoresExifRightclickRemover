@@ -1,121 +1,145 @@
 #!/usr/bin/env python3
-"""Real-image end-to-end verification.
+"""
+Real-image end-to-end verification (C1/C2/C3 + ICC-profile coverage).
 
-Generates a JPEG with Pillow, runs the real ExifRemover engine, then re-decodes
-the result with Pillow and compares pixels. This is the adversarial test C1/C2/C3 demand.
+Generates real camera-style JPEG inputs (EXIF + ICC + COM + XMP) with Pillow,
+runs the real ExifRemover engine on each, then re-decodes the result with Pillow
+and compares pixels. This is the adversarial test the original audit demands:
+a synthetic-only fixture won't catch the C1 byte-stuffing bug or the
+profile-difference-on-ICC regression.
+
+Requires:
+  * Python 3.10+ with Pillow >= 10 (we use ImageCms for ICC profile generation)
+  * verify/bin/Release/net8.0/ExifRemover.Verifier.exe to be already built
+    (run `dotnet build verify/ExifRemover.Verifier.csproj -c Release`)
 """
 
-import io
 import os
-import struct
 import subprocess
 import sys
 import tempfile
 
+# Pillow 12 deprecated Image.Image.getdata; we use the equivalent .tobytes() instead
+# to keep the script warning-free (and thus keep a non-zero exit code only on real
+# failures, not on deprecation noise).
 from PIL import Image
-from PIL.ExifTags import Base as ExifBase
 
 
-def build_real_jpeg_with_metadata(width=64, height=64) -> bytes:
-    """Real camera-style JPEG: EXIF (Make/Model/Software/DateTime), ICC, COM."""
-    exif = Image.Exif()
-    exif[ExifBase.Make] = "TestCamCo"
-    exif[ExifBase.Model] = "TC-100"
-    exif[ExifBase.Software] = "TestSoft 2.0"
-    exif[ExifBase.DateTimeOriginal] = "2024:06:15 10:30:00"
-    exif[ExifBase.ImageDescription] = "Test photo with metadata"
-
-    img = Image.new("RGB", (width, height), (255, 128, 64))
-    # Add some pixel variation so compression has real data
-    pixels = img.load()
-    for y in range(height):
-        for x in range(width):
-            pixels[x, y] = ((x * 7) % 256, (y * 11) % 256, ((x + y) * 5) % 256)
-
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90, exif=exif.tobytes(), comment="Photo by Test User")
-    return buf.getvalue()
+VERIFIER_EXE = r"D:\Projects\ExifRemover\verify\bin\Release\net8.0\ExifRemover.Verifier.exe"
 
 
-def verify_one(label, profile, jpeg_bytes):
-    print(f"\n=== {label} ({profile}) ===")
-    print(f"  Input: {len(jpeg_bytes)} bytes, EXIF/ICC/COM embedded")
+def verifier_present() -> bool:
+    return os.path.exists(VERIFIER_EXE)
+
+
+def decode_pixels(path: str):
+    img = Image.open(path)
+    img.load()
+    # Compare via the raw bytes of the decoded pixel buffer — this is the
+    # strict, allocation-light way and avoids the Pillow 12 deprecation of getdata().
+    return img.size, img.tobytes()
+
+
+def verify_one(label: str, profile: str, input_path: str) -> bool:
+    print(f"\n=== {label} (profile={profile}) ===")
+    print(f"  Input: {os.path.basename(input_path)} ({os.path.getsize(input_path)} bytes)")
 
     tmpdir = tempfile.mkdtemp(prefix="er_verify_")
-    inp = os.path.join(tmpdir, "in.jpg")
     out = os.path.join(tmpdir, "out.jpg")
-    with open(inp, "wb") as f:
-        f.write(jpeg_bytes)
-
-    # Use the real verifier binary
-    verifier_exe = r"D:\Projects\ExifRemover\verify\bin\Release\net8.0\ExifRemover.Verifier.exe"
-    if not os.path.exists(verifier_exe):
-        print(f"  SKIP: verifier not found at {verifier_exe}")
-        return True
 
     r = subprocess.run(
-        [verifier_exe, inp, out, profile],
-        capture_output=True, text=True
+        [VERIFIER_EXE, input_path, out, profile],
+        capture_output=True, text=True,
     )
     if r.returncode != 0:
         print(f"  FAIL: verifier returned {r.returncode}")
-        print(f"  stderr: {r.stderr}")
+        print(f"  stderr: {r.stderr.strip()}")
+        print(f"  stdout: {r.stdout.strip()}")
         return False
-    print("  " + r.stdout.replace("\n", "\n  ").strip())
+    for line in r.stdout.splitlines():
+        if line:
+            print(f"  {line}")
 
-    # Re-decode and compare pixels. The stripper may choose a non-clashing sibling
-    # filename (e.g. out (2).jpg) when the requested path already exists. The verifier
-    # output also tells us the actual output_path — parse it from stdout.
+    # The stripper may choose a non-clashing sibling (e.g. out (2).jpg) when the
+    # requested path already exists. Look for any non-empty sibling that begins
+    # with our base name.
     if not os.path.exists(out) or os.path.getsize(out) == 0:
-        d = os.path.dirname(out)
         base, ext = os.path.splitext(os.path.basename(out))
-        # Look for any sibling that starts with `base ` and ends with `ext` (the non-clashing
-        # pattern) AND has a non-zero size.
-        for f in sorted(os.listdir(d)):
-            if (f.startswith(base + " ") or f == os.path.basename(out)) and f.endswith(ext):
-                p = os.path.join(d, f)
-                if os.path.getsize(p) > 0:
-                    out = p
-                    print(f"  (stripper used: {os.path.basename(out)})")
+        for f in sorted(os.listdir(tmpdir)):
+            if (f == os.path.basename(out) or f.startswith(base + " ")) and f.endswith(ext):
+                candidate = os.path.join(tmpdir, f)
+                if os.path.getsize(candidate) > 0:
+                    out = candidate
+                    print(f"  (stripper used: {f})")
                     break
     if not os.path.exists(out) or os.path.getsize(out) == 0:
         print("  FAIL: no non-empty output file")
         return False
-    img_orig = Image.open(inp)
-    img_orig.load()
-    img_stripped = Image.open(out)
-    img_stripped.load()
-    if img_orig.size != img_stripped.size:
-        print(f"  FAIL: size changed: {img_orig.size} -> {img_stripped.size}")
+
+    try:
+        in_size, in_pixels = decode_pixels(input_path)
+        out_size, out_pixels = decode_pixels(out)
+    except Exception as ex:
+        print(f"  FAIL: could not decode one of the files: {ex}")
         return False
-    if list(img_orig.getdata()) != list(img_stripped.getdata()):
-        print("  FAIL: pixel data DIFFERS — not lossless!")
-        # Find first mismatch
-        p1 = list(img_orig.getdata())
-        p2 = list(img_stripped.getdata())
-        for i in range(len(p1)):
-            if p1[i] != p2[i]:
-                print(f"    first mismatch at index {i}: {p1[i]} vs {p2[i]}")
+
+    if in_size != out_size:
+        print(f"  FAIL: image size changed: {in_size} -> {out_size}")
+        return False
+    if in_pixels != out_pixels:
+        print(f"  FAIL: pixel data DIFFERS — not lossless!")
+        # Find first mismatch (in_size * channels stride)
+        n = min(len(in_pixels), len(out_pixels))
+        for i in range(0, n, 3):  # RGB stride
+            if in_pixels[i:i+3] != out_pixels[i:i+3]:
+                print(f"    first mismatch at byte {i}: in={in_pixels[i:i+3].hex()} out={out_pixels[i:i+3].hex()}")
                 break
         return False
-    print(f"  Pixel-byte-identical: YES (size={img_orig.size})")
+
+    print(f"  Pixel-byte-identical: YES (size={in_size})")
     return True
 
 
-def main():
-    # Test all three profiles
-    jpeg = build_real_jpeg_with_metadata(64, 64)
+def main() -> int:
+    if not verifier_present():
+        print(f"SKIP: verifier not found at {VERIFIER_EXE}")
+        print("Build it with: dotnet build verify/ExifRemover.Verifier.csproj -c Release")
+        return 0
+
+    # Generate the inputs via gen_test_jpeg.py into a fresh temp dir.
+    inputs = tempfile.mkdtemp(prefix="er_inputs_")
+    gen = subprocess.run(
+        [sys.executable, os.path.join(os.path.dirname(__file__), "gen_test_jpeg.py"), inputs],
+        capture_output=True, text=True,
+    )
+    if gen.returncode != 0:
+        print(f"FAIL: gen_test_jpeg.py returned {gen.returncode}")
+        print(f"  stdout: {gen.stdout}")
+        print(f"  stderr: {gen.stderr}")
+        return 1
+    for line in gen.stdout.splitlines():
+        if line:
+            print(f"  [gen] {line}")
+
+    full_jpeg = os.path.join(inputs, "real_full.jpg")
+    bare_jpeg = os.path.join(inputs, "real_bare.jpg")
+
+    if not os.path.exists(full_jpeg) or not os.path.exists(bare_jpeg):
+        print(f"FAIL: gen_test_jpeg.py did not produce the expected outputs")
+        return 1
+
     all_pass = True
+
+    # Same input across the three profiles — they differ only on ICC handling, so
+    # the byte counts and the verifier's dropped_segments will vary. The pixel data
+    # must be identical in all three (the entropy-coded scan is never re-encoded).
     for profile in ["Privacy", "Minimal", "AllMetadata"]:
-        if not verify_one(f"Real camera-style JPEG with EXIF/ICC/COM", profile, jpeg):
+        if not verify_one("Real camera-style JPEG with EXIF+ICC+COM+XMP", profile, full_jpeg):
             all_pass = False
 
-    # Also test a JPEG with no metadata (regression for "0 of 1 files, saves 0 B")
-    bare_img = Image.new("RGB", (32, 32), (10, 20, 30))
-    buf = io.BytesIO()
-    bare_img.save(buf, format="JPEG", quality=85)
-    bare_jpeg = buf.getvalue()
-    if not verify_one("JPEG with NO metadata (regression for 0/1 file bug)", "Privacy", bare_jpeg):
+    # Regression: a JPEG with no metadata. Must succeed without throwing and must
+    # produce a pixel-identical copy (no metadata removed, entropy preserved).
+    if not verify_one("Bare JPEG (no metadata)", "Privacy", bare_jpeg):
         all_pass = False
 
     print()

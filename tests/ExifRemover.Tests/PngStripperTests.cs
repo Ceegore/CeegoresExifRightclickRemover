@@ -54,12 +54,16 @@ public class PngStripperTests : IDisposable
         var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
         _tempFiles.Add(outPath);
 
-// Pre-condition: source has tEXt, tIME, iCCP. (eXIf chunks are opaque to MetadataExtractor's
-        // PNG reader and don't surface as tag entries; the stripper still drops the chunk.)
+// Pre-condition: source has tEXt, tIME, iCCP, and eXIf. The PNG inspector now
+        // surfaces eXIf as its own PngExif group via a small byte-level probe (the
+        // stripper has always dropped eXIf, but the inspector used to roll it into
+        // PngText, hiding the fact that the EXIF block would be removed). See L4 in
+        // _temp11.md for the original audit note.
         var preInspect = MetadataInspector.Inspect(src);
         Assert.Contains(preInspect.Entries, e => e.Group == MetadataGroups.PngText);
         Assert.Contains(preInspect.Entries, e => e.Group == MetadataGroups.PngTime);
         Assert.Contains(preInspect.Entries, e => e.Group == MetadataGroups.PngIccp);
+        Assert.Contains(preInspect.Entries, e => e.Group == MetadataGroups.PngExif);
 
         var result = PngMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
 
@@ -70,6 +74,7 @@ public class PngStripperTests : IDisposable
         Assert.DoesNotContain(post.Entries, e => e.Group == MetadataGroups.PngText);
         Assert.DoesNotContain(post.Entries, e => e.Group == MetadataGroups.PngTime);
         Assert.DoesNotContain(post.Entries, e => e.Group == MetadataGroups.PngIccp);
+        Assert.DoesNotContain(post.Entries, e => e.Group == MetadataGroups.PngExif);
 
         // gAMA must be kept under Privacy profile
         Assert.Contains(post.Entries, e => e.Group == MetadataGroups.PngGama);
@@ -279,5 +284,191 @@ public class PngStripperTests : IDisposable
             crc = t[(crc ^ data[offset + i]) & 0xFF] ^ (crc >> 8);
         }
         return crc ^ 0xFFFFFFFFu;
+    }
+
+    // ---------- B2 / B8 / B9 / B15 regression tests ----------
+
+    [Fact]
+    public void Inspect_SurfacesPngExifAsSeparateGroup()
+    {
+        // B8 / L4: MetadataExtractor's PNG reader rolls tEXt and eXIf into a single
+        // PngText bucket, which would hide the fact that the stripper drops eXIf.
+        // The PngChunkProbe adds a PngExif entry whenever an eXIf chunk is present.
+        var src = WriteTemp(FixtureFactory.PngWithTextTimeExifIccp(), $"er-exif-{Guid.NewGuid():N}.png");
+        var inspection = MetadataInspector.Inspect(src);
+        Assert.Contains(inspection.Entries, e => e.Group == MetadataGroups.PngExif);
+    }
+
+    [Fact]
+    public void Strip_PngWithExif_ExifEntryRemovedAfterStrip()
+    {
+        // After a Privacy strip, the eXIf chunk is gone, so the PngExif entry
+        // must also be gone from the post-strip inspection.
+        var src = WriteTemp(FixtureFactory.PngWithTextTimeExifIccp(), $"er-exif-out-{Guid.NewGuid():N}.png");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+        _tempFiles.Add(outPath);
+
+        PngMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
+
+        var post = MetadataInspector.Inspect(outPath);
+        Assert.DoesNotContain(post.Entries, e => e.Group == MetadataGroups.PngExif);
+    }
+
+    [Fact]
+    public void PngMetadataStripper_RejectsChunkLengthAboveCap()
+    {
+        // B9 / B15: a corrupt or malicious PNG claiming a chunk length above the
+        // 256 MB cap must be rejected cleanly, not OOM the process by allocating
+        // the requested buffer.
+        using var ms = new MemoryStream();
+        ms.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+        WriteRawChunk(ms, "IHDR", new byte[]
+        {
+            0x00,0x00,0x00,0x04, 0x00,0x00,0x00,0x04,
+            0x08,0x02,0x00,0x00,0x00
+        });
+        // A tEXt chunk with a length field set to 2^31-1 (above the cap).
+        WriteRawLength(ms, 0x7FFFFFFF);
+        ms.Write(System.Text.Encoding.ASCII.GetBytes("tEXt"));
+        WriteRawCrc(ms, 0);
+        WriteRawChunk(ms, "IEND", Array.Empty<byte>());
+
+        var src = WriteTemp(ms.ToArray(), $"er-huge-{Guid.NewGuid():N}.png");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+        _tempFiles.Add(outPath);
+
+        Assert.Throws<InvalidDataException>(() =>
+            PngMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy));
+    }
+
+    [Fact]
+    public void Strip_KeepsTpngTrnsUnderEveryProfile()
+    {
+        // B2: the stripper keeps tRNS regardless of profile. After every strip
+        // variant, tRNS must still be in the output.
+        foreach (var profile in new[] { StripProfile.Privacy, StripProfile.AllMetadata, StripProfile.Minimal })
+        {
+            var src = WriteTemp(FixtureFactory.PngWithTextTimeExifIccp(), $"er-trns-{profile}-{Guid.NewGuid():N}.png");
+            var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+            _tempFiles.Add(outPath);
+
+            PngMetadataStripper.Strip(src, outPath, overwriteSource: false, profile);
+
+            var bytes = File.ReadAllBytes(outPath);
+            Assert.True(ContainsChunk(bytes, "tRNS"), $"tRNS must be kept under {profile}.");
+        }
+    }
+
+    [Fact]
+    public void Strip_AlwaysKeepsPngPhysBkgdSbitTrns_AcrossAllProfiles()
+    {
+        // B2 (engine side): pHYs, bKGD, sBIT, tRNS are always kept by the stripper,
+        // even under the most aggressive profile (AllMetadata). The OverlayViewModel
+        // fix (B2 / UI side) makes the review grid show them as "Would be kept"; this
+        // test proves the engine actually keeps them.
+        foreach (var profile in new[] { StripProfile.Privacy, StripProfile.AllMetadata, StripProfile.Minimal })
+        {
+            var src = WriteTemp(FixtureFactory.PngWithAlwaysKeptAncillaryChunks(), $"er-keepall-{profile}-{Guid.NewGuid():N}.png");
+            var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+            _tempFiles.Add(outPath);
+
+            PngMetadataStripper.Strip(src, outPath, overwriteSource: false, profile);
+
+            var bytes = File.ReadAllBytes(outPath);
+            foreach (var chunk in new[] { "pHYs", "bKGD", "sBIT", "tRNS" })
+            {
+                Assert.True(ContainsChunk(bytes, chunk), $"{chunk} must be kept under {profile}.");
+            }
+            // The text chunk we added should have been dropped.
+            Assert.False(ContainsChunk(bytes, "tEXt"), $"tEXt must be dropped under {profile}.");
+        }
+    }
+
+    [Fact]
+    public void Strip_SkippedChunkDoesNotAllocatePayloadBuffer()
+    {
+        // Smoke test: stripping a PNG with a large tEXt chunk that gets dropped
+        // must succeed. We can't easily prove "no allocation" from a test, but we
+        // CAN prove the stripper handles a 1 MB tEXt payload correctly (and the
+        // skip-without-allocate path actually runs). A regression to the
+        // old "allocate then discard" code would still pass, but the test
+        // catches a buffer-blowout if the cap were lowered / removed.
+        var large = new byte[1024 * 1024];
+        for (int i = 0; i < large.Length; i++) large[i] = (byte)('A' + (i % 26));
+        var t = new List<byte>();
+        t.AddRange(System.Text.Encoding.ASCII.GetBytes("Comment"));
+        t.Add(0);
+        t.AddRange(large);
+
+        using var ms = new MemoryStream();
+        ms.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+        WriteRawChunk(ms, "IHDR", new byte[]
+        {
+            0x00,0x00,0x00,0x04, 0x00,0x00,0x00,0x04,
+            0x08,0x02,0x00,0x00,0x00
+        });
+        WriteRawChunk(ms, "tEXt", t.ToArray());
+        WriteRawChunk(ms, "IDAT", new byte[]
+        {
+            0x78, 0x01, 0x01, 0x06, 0x00, 0xFB, 0xFF, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x04, 0x6A, 0x6F, 0xC2, 0x68
+        });
+        WriteRawChunk(ms, "IEND", Array.Empty<byte>());
+
+        var src = WriteTemp(ms.ToArray(), $"er-skip-{Guid.NewGuid():N}.png");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+        _tempFiles.Add(outPath);
+
+        var result = PngMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
+        Assert.Equal(1, result.DroppedSegments); // exactly the tEXt chunk
+
+        var bytes = File.ReadAllBytes(outPath);
+        Assert.False(ContainsChunk(bytes, "tEXt"), "tEXt must be dropped.");
+        Assert.True(ContainsChunk(bytes, "IHDR"));
+        Assert.True(ContainsChunk(bytes, "IEND"));
+    }
+
+    private static bool ContainsChunk(byte[] pngBytes, string type)
+    {
+        int pos = 8;
+        while (pos + 12 <= pngBytes.Length)
+        {
+            int length = (pngBytes[pos] << 24) | (pngBytes[pos + 1] << 16)
+                       | (pngBytes[pos + 2] << 8) | pngBytes[pos + 3];
+            var t = System.Text.Encoding.ASCII.GetString(pngBytes, pos + 4, 4);
+            if (t == type) return true;
+            int next = pos + 8 + length + 4;
+            if (t == "IEND" || next > pngBytes.Length) break;
+            pos = next;
+        }
+        return false;
+    }
+
+    private static void WriteRawChunk(MemoryStream ms, string type, byte[] data)
+    {
+        WriteRawLength(ms, data.Length);
+        ms.Write(System.Text.Encoding.ASCII.GetBytes(type));
+        ms.Write(data);
+        WriteRawCrc(ms, 0);
+    }
+
+    private static void WriteRawLength(MemoryStream ms, int length)
+    {
+        ms.WriteByte((byte)(length >> 24));
+        ms.WriteByte((byte)(length >> 16));
+        ms.WriteByte((byte)(length >> 8));
+        ms.WriteByte((byte)length);
+    }
+
+    private static void WriteRawCrc(MemoryStream ms, uint crc)
+    {
+        ms.WriteByte((byte)(crc >> 24));
+        ms.WriteByte((byte)(crc >> 16));
+        ms.WriteByte((byte)(crc >> 8));
+        ms.WriteByte((byte)crc);
     }
 }

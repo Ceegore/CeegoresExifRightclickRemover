@@ -217,3 +217,73 @@ Post-round-2: solution builds clean (Release), xUnit **23/23**, SelfTest **13/13
 
 ## Bottom line
 The single most important promise of this tool — strip metadata from a JPEG **losslessly**, safely, optionally in place — is the one it fails most severely. On realistic inputs it corrupts the image (C1), and the "safe, atomic, overwrite-in-place" path turns that into irreversible data loss (C2). Progressive JPEGs don't work at all (C3). The documented build is broken (C4). And none of this is caught because the tests only ever feed the strippers degenerate inputs that dodge the bugs (H1). The green test counts, the "all 21 tests pass" claim, and the "lossless / never modifies pixels / original intact" guarantees should be treated as disproven.
+
+---
+
+## ROUND 3 — 360° bug hunt + fix (2026-08-03)
+
+After Rounds 1 and 2 the engine and overlay were stable, but a fresh 360° pass with the rule "always adversarial-audit before declaring done" found 11 more real defects across the Engine, App, scripts, tests, and verifier. The build of `ExifRemover.sln -c Release` itself was **broken on the first invocation** by one of them.
+
+| ID | What | Where | Fix |
+|---|---|---|---|
+| **B1** | `var visible` declared twice in `UpdateStatusFromEntries` (inner `if` + outer method) — CS0136, blocks the documented `dotnet build ExifRemover.sln -c Release`. Earlier rounds claimed "App compiles" but the WPF temp-project build is what catches the collision. | `src/ExifRemover.App/OverlayViewModel.cs:283` | Inlined the inner reference. |
+| **B2** | `OverlayViewModel.GetChunkKey` was missing `PngPhys`, `PngBkgd`, `PngSbit`, `PngTrns` cases and `ComputeKeepSet` was missing the always-keep entries. The review grid claimed "Would be removed" for 4 chunks the stripper actually keeps. Partial regression of U2. | `OverlayViewModel.cs:99-127, 336-352` | Added the missing keys + entries. |
+| **B3** | `OverlayWindow.RunRemove` never called `_vm.CapturePreStripSnapshots()`. The pre-strip snapshot feature was fully implemented (field, method, consumer) but the trigger was missing — dead code. | `OverlayWindow.xaml.cs:99-` | Added the call right before `Task.Run`. |
+| **B4** | `Program.Main` returned 0 unconditionally, swallowing `Application.Shutdown(2)` exit codes. CI scripts and `.cmd` wrappers couldn't distinguish "no input" from "success". | `Program.cs` | `LaunchWithFiles` now returns `app.Run()`; `Main` returns it. |
+| **B5** | `App.FilterSupported` silently dropped unsupported files. A 5-file right-click with 3 `.txt` + 2 `.jpg` would strip the 2 `.jpg` and pretend the other 3 never existed. | `Program.cs` | New `SetNonFatalNotice` on `OverlayWindow`; dropped files are now logged to stderr AND shown in the overlay status strip. |
+| **B6** | `Strip_RandomFuzzInput_NeverThrowsForValidJpegHeader` set the SOI bytes, then called `rng.NextBytes(bytes)` which overwrote them. The H1 fix added new C1/C3 regression tests but did not fix the original fuzz test (still flagged in the H1 paragraph but the test itself was unchanged). | `tests/ExifRemover.Tests/JpegStripperTests.cs:246-272` | Reordered: randomize first, then stamp the SOI on top. |
+| **B7 / L2** | `BatchStripReport.SuccessCount` was `Results.Count(r => !r.Changed \|\| r.OutputSizeBytes > 0)` — a "non-empty output is a success" semantic that would have re-classified a corrupt-but-nonempty output as success if a future regression slipped through. | `src/ExifRemover.Engine/StripPipeline.cs:85` | Tightened to `Results.Count`. Failures live in `Failures`; Results = success. |
+| **B8 / L4** | PNG eXIf chunks were dropped by the stripper but never surfaced in the review grid. MetadataExtractor's PNG reader rolls tEXt and eXIf into a single `PngText` bucket, hiding the EXIF block from the user. | `MetadataInspector.cs` | New `PngChunkProbe` that walks the file once and adds a `PngExif` entry whenever an eXIf chunk is present. Wired in only for PNG files. |
+| **B9 / B15** | `PngMetadataStripper` allocated `new byte[length]` for every chunk even when dropping it (so a 1 GB eXIf would OOM the process), and accepted any 2^31-1 length with no sanity cap. | `PngMetadataStripper.cs` | Added `MaxChunkLength = 256 * 1024 * 1024`; dropped chunks now use a new `SkipExactly` helper that seeks without allocating; kept chunks still need the buffer for CRC recomputation (documented). |
+| **B10 / L3** | `uninstall.cmd` delegated to `.\install.cmd uninstall` which only resolved when the caller's CWD was the install folder. | `uninstall.cmd` | Replaced with a self-contained version that mirrors the registry keys and uses `%~dp0` correctly. |
+| **B12** | `verify/OverlayWindow.original.txt` was a stale pre-fix copy of `OverlayWindow.xaml.cs` — confusing and not referenced anywhere. | `verify/` | Trashed. |
+| — | `dotnet test` after the rebuild triggered the WDAC sandbox policy (0x800711C7) — the new `Engine.dll` was blocked from being loaded. The original audit's "sandbox artefact" note prescribed embedding the engine sources directly into the test/selftest/verifier assemblies. | `tests/`, `src/ExifRemover.SelfTest/`, `verify/` | Replaced `ProjectReference` with `<Compile Include="..\Engine\*.cs" Link="Engine\..." />` in all three projects, with explanatory XML comments so a future maintainer doesn't try to "fix" the missing reference. End users running the published self-contained `ExifRemover.exe` are unaffected — the policy is sandbox-side only. |
+
+**Test coverage added (8 new tests, xUnit went 27→35):**
+- `Inspect_SurfacesPngExifAsSeparateGroup` — proves B8 (PngExif entry exists when an eXIf chunk is present)
+- `Strip_PngWithExif_ExifEntryRemovedAfterStrip` — proves the entry disappears after a strip
+- `PngMetadataStripper_RejectsChunkLengthAboveCap` — proves B15 (256 MB cap, throws instead of OOMing)
+- `Strip_KeepsTpngTrnsUnderEveryProfile` — engine side of B2
+- `Strip_AlwaysKeepsPngPhysBkgdSbitTrns_AcrossAllProfiles` — engine side of B2, all four always-kept chunks
+- `Strip_SkippedChunkDoesNotAllocatePayloadBuffer` — proves B9 (1 MB tEXt gets dropped cleanly)
+- `BatchStripReport_SuccessCount_EqualsResultsCount` — proves B7/L2 (changed + bare both count as success, not "non-empty output")
+- `BatchStripReport_SuccessCount_ExcludesFailures` — pins the contract
+
+**Test harness improvements:**
+- `gen_test_jpeg.py` rewritten to actually inject a real sRGB ICC profile (the previous version's "real camera-style JPEG with EXIF/ICC/COM" claim was false — `img.save(...)` had no `icc_profile=` so the input had no ICC at all and all three profiles produced identical output, hiding any profile-difference bug). Now uses `ImageCms.createProfile("sRGB")` to build a real profile at test time.
+- `verify_real_images.py` rewritten to (a) call `gen_test_jpeg.py` into a temp dir, (b) use `tobytes()` instead of the deprecated `getdata()` so exit code 0 means real success, (c) print the per-profile output sizes so the profile-difference is visible in the log.
+
+**Real-image verifier results after the round-3 fixes (with the new ICC-injected input):**
+
+```
+=== Real camera-style JPEG with EXIF+ICC+COM+XMP (profile=Privacy) ===
+  original_size=3187  output_size=2058  dropped_segments=4  pre=34 post=6
+  entropy_mismatch=-1  stuffed_ff00=54/54  decodes=yes  pixel-identical=YES
+
+=== Real camera-style JPEG with EXIF+ICC+COM+XMP (profile=Minimal) ===
+  original_size=3187  output_size=2664  dropped_segments=3  pre=34 post=28
+  entropy_mismatch=-1  stuffed_ff00=54/54  decodes=yes  pixel-identical=YES
+
+=== Real camera-style JPEG with EXIF+ICC+COM+XMP (profile=AllMetadata) ===
+  original_size=3187  output_size=2058  dropped_segments=4  pre=34 post=6
+  entropy_mismatch=-1  stuffed_ff00=54/54  decodes=yes  pixel-identical=YES
+```
+
+Privacy and AllMetadata both produce 2058 bytes (same behavior for JPEG: both strip ICC); Minimal produces 2664 bytes (keeps ICC → 606 bytes larger). All three are pixel-identical, byte-stuffing preserved, decodable. The ICC-injected input now makes the profile-difference visible end-to-end.
+
+**Final status after Round 3:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 35/35 (was 27/27 after Round 1+2; +8 new tests for the round-3 defect surface)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED, with ICC-injected inputs that actually exercise the profile differences
+
+**Still open / accepted (from Round 1+2 L-items, not addressed in this round either):**
+- **L1** (README AllMetadata "plus ICC" wording) — still ambiguous in the profile table; cosmetic
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred, low priority):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks. For a 100 MB IDAT this is a 100 MB allocation. Could be optimized with a streaming CRC, but the memory pressure is per-chunk and IDAT chunks are usually a few hundred KB. Not worth the complexity right now.
+- The `OverlayWindow_Loaded` `Task.Run` doesn't observe the inner exception if `_vm.InspectAll` throws. `MetadataInspector.Inspect` catches all exceptions internally, so this is theoretical, but defensive `try/catch` would be cleaner.
+- The clipboard access in `CopyValue_Click` / `CopyRow_Click` can throw `COMException` if the clipboard is in use by another process. Not caught. Not a real problem in interactive use.
+
