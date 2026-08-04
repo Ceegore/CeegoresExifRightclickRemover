@@ -19,8 +19,8 @@
     Sandbox-only: Windows Defender Application Control in the test environment blocks loading
     a freshly-built ExifRemover.Engine.dll (0x800711C7). The fix is to embed the Engine sources
     directly into the test assembly so no separate DLL load is needed. This is identical to
-    the workaround ExifRemover.Auditor used during the original audit (see _temp11.md "sandbox
-    artefact" section). End users running the published self-contained ExifRemover.exe are
+    the workaround ExifRemover.Auditor used during the original audit (see docs/M2.20-audit-log.md
+    "sandbox artefact" section). End users running the published self-contained ExifRemover.exe are
     unaffected — the policy is sandbox-side only.
   -->
   <ItemGroup>

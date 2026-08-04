@@ -252,7 +252,7 @@ We **also** generate randomized fuzz inputs in a `[Fact]` (D/H1 — randomized b
 2. `src/ExifRemover.Engine/ExifRemover.Engine.csproj` with the engine files listed above.
 3. `src/ExifRemover.App/ExifRemover.App.csproj` (`net8.0-windows`, `UseWPF=true`) with `Program.cs`, `OverlayWindow.xaml(.cs)`, `OverlayViewModel.cs`, `AboutWindow.xaml(.cs)`, `ConfirmWindow.xaml(.cs)`, `app.manifest`, `Resources/Theme.xaml`.
 4. `src/ExifRemover.SelfTest/ExifRemover.SelfTest.csproj` (console exe, net8.0) — runs the Engine end-to-end without xUnit, used when sandbox WDAC blocks loading the test DLL.
-5. `verify/ExifRemover.Verifier.csproj` (console exe, net8.0) — invoked by `verify_real_images.py` for the real-camera-image round-trip check.
+5. `verify/ExifRemover.Verifier.csproj` (console exe, net8.0) — invoked by `scripts/verify_real_images.py` for the real-camera-image round-trip check.
 6. `tests/ExifRemover.Tests/ExifRemover.Tests.csproj` (xUnit, net8.0) with the test classes above and the in-memory `FixtureFactory` for JPEG/PNG fixtures.
 7. `install.cmd`, `uninstall.cmd`.
 8. `README.md` with usage, install/uninstall, and the privacy/security note that this tool never uploads, never phones home, runs 100% offline.

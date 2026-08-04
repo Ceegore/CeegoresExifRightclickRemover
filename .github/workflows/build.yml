@@ -1,0 +1,84 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel any in-progress run for the same ref when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------------------
+  # Windows: full build, xUnit, SelfTest, Python real-image verifier.
+  # ----------------------------------------------------------------
+  windows:
+    name: windows-build-test-verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore ExifRemover.sln
+
+      - name: Build (Release)
+        run: dotnet build ExifRemover.sln -c Release --no-restore --nologo -v:m
+
+      - name: xUnit tests
+        run: dotnet test tests\ExifRemover.Tests\ExifRemover.Tests.csproj -c Release --no-build --nologo -v:m
+
+      - name: SelfTest (console harness — no xUnit loader)
+        run: dotnet run --project src\ExifRemover.SelfTest -c Release --no-build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "Pillow>=10"
+
+      - name: Real-image verifier (Pillow end-to-end)
+        run: python scripts\verify_real_images.py
+
+  # ----------------------------------------------------------------
+  # Linux: Engine + Tests + SelfTest only. The WPF App project
+  # targets net8.0-windows and cannot be built here, but the
+  # engine logic, the xUnit suite, and the SelfTest harness all
+  # run cross-platform. Catches accidental Windows-only API leaks
+  # into the Engine.
+  # ----------------------------------------------------------------
+  linux:
+    name: linux-engine-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build Engine
+        run: dotnet build src\ExifRemover.Engine\ExifRemover.Engine.csproj -c Release --nologo -v:m
+
+      - name: Build + run xUnit tests
+        run: |
+          dotnet build tests\ExifRemover.Tests\ExifRemover.Tests.csproj -c Release --nologo -v:m
+          dotnet test  tests\ExifRemover.Tests\ExifRemover.Tests.csproj -c Release --no-build --nologo -v:m
+
+      - name: Build + run SelfTest
+        run: |
+          dotnet build src\ExifRemover.SelfTest\ExifRemover.SelfTest.csproj -c Release --nologo -v:m
+          dotnet run    --project src\ExifRemover.SelfTest -c Release --no-build

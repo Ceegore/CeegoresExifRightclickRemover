@@ -82,7 +82,7 @@ After Remove completes, the overlay shows a one-line summary (how many files cha
 ## Privacy & security
 
 - **Runs 100% offline.** No network access. No telemetry. No analytics. (You can verify this by running the tool with the network unplugged.)
-- **Code is open source** (AGPL-3.0-or-later). You can audit every line before installing.
+- **Code is open source** (MIT License). You can audit every line before installing.
 - **Lossless strip.** The pixel data of your images is never re-encoded. We rewrite only the metadata segments/chunks; the entropy-coded image bytes pass through byte-for-byte.
 - **Atomic writes.** Output is written to a sibling `.tmp` file first, then atomically replaces the destination. A power loss or crash mid-strip leaves your original intact.
 
@@ -126,3 +126,12 @@ This build does not include a signing script. If you have your own code-signing 
 ExifRemover source code: MIT License (see `LICENSE`).
 
 MetadataExtractor (third-party dependency): Apache License 2.0 (see `THIRD_PARTY_NOTICES.md`).
+
+## Documentation
+
+- [`PLAN.md`](PLAN.md) — design and architecture notes for the current v1.
+- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — attributions for bundled third-party code.
+- [`CHANGELOG.md`](CHANGELOG.md) — release-by-release history of fixes and features.
+- [`docs/M2.20-audit-log.md`](docs/M2.20-audit-log.md) — the original adversarial bug-hunt report that produced the 10-round M2.20.x audit series (10 rounds, 40 fixes, +34 tests).
+- [`scripts/verify_real_images.py`](scripts/verify_real_images.py) — Python end-to-end verifier (Pillow 10+). Run after `dotnet build verify/ExifRemover.Verifier.csproj -c Release` to confirm the stripper is truly lossless on real camera-style JPEGs.
+- [`scripts/gen_test_jpeg.py`](scripts/gen_test_jpeg.py) — generates the EXIF+ICC+COM+XMP test inputs used by `verify_real_images.py`.

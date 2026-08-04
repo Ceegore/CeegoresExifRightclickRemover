@@ -11,7 +11,8 @@ profile-difference-on-ICC regression.
 Requires:
   * Python 3.10+ with Pillow >= 10 (we use ImageCms for ICC profile generation)
   * verify/bin/Release/net8.0/ExifRemover.Verifier.exe to be already built
-    (run `dotnet build verify/ExifRemover.Verifier.csproj -c Release`)
+    (run `dotnet build verify/ExifRemover.Verifier.csproj -c Release` from the
+    repo root)
 """
 
 import os
@@ -25,7 +26,17 @@ import tempfile
 from PIL import Image
 
 
-VERIFIER_EXE = r"D:\Projects\ExifRemover\verify\bin\Release\net8.0\ExifRemover.Verifier.exe"
+# Resolve the verifier exe relative to this script's location so the script
+# works regardless of where the repo is cloned. The script lives at
+# <repo>/scripts/verify_real_images.py, so the verifier is at
+# <repo>/verify/bin/Release/net8.0/ExifRemover.Verifier(.exe).
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_SCRIPT_DIR)
+_VERIFIER_BIN_DIR = os.path.join(_REPO_ROOT, "verify", "bin", "Release", "net8.0")
+VERIFIER_EXE = os.path.join(
+    _VERIFIER_BIN_DIR,
+    "ExifRemover.Verifier.exe" if sys.platform == "win32" else "ExifRemover.Verifier",
+)
 
 
 def verifier_present() -> bool:
