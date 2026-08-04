@@ -99,6 +99,15 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
     private static HashSet<string> ComputeKeepSet(ImageFormat? format, StripProfile profile)
     {
         var set = new HashSet<string>(StringComparer.Ordinal);
+        // D51: fail-safe default for any entry that falls through to the "Other" group
+        // (MetadataGroups.Other = "Other"). MapGroup's _ => dir.Name ?? MetadataGroups.Other
+        // fallback fires when MetadataExtractor surfaces a directory that doesn't match any
+        // of the explicit cases. The stripper operates on bytes, not on MetadataExtractor's
+        // directory abstraction, so we can't be 100% sure the stripper drops the underlying
+        // bytes — marking "Other" as kept is the safe default. If we don't know what the
+        // directory represents, don't claim the stripper will remove it. (Same fail-safe
+        // reasoning as the "PNGUNKNOWN" entry for the PNG path.)
+        set.Add("Other");
         if (format == ImageFormat.Jpeg)
         {
             set.Add("JFIF");
@@ -519,15 +528,9 @@ public sealed class EntryRow
     public string Group => Entry.Group;
     public string Name => Entry.Name;
     public string Value => Entry.Value;
-    public string SizeDisplay => Entry.EstimatedSizeBytes is long b ? FormatBytes(b) : string.Empty;
+    public string SizeDisplay => Entry.EstimatedSizeBytes is long b ? Formatting.FormatBytes(b) : string.Empty;
     public string Visibility => WouldKeep ? "Would be kept" : "Would be removed";
     public Brush RowBrush => WouldKeep ? Brushes.DimGray : Brushes.Black;
-    private static string FormatBytes(long b)
-    {
-        if (b < 1024) return $"{b} B";
-        if (b < 1024 * 1024) return $"{b / 1024.0:0.0} KB";
-        return $"{b / 1024.0 / 1024.0:0.00} MB";
-    }
 }
 
 public sealed class StripProfileOption

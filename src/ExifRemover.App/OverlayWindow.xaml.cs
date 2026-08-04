@@ -321,7 +321,7 @@ public partial class OverlayWindow : Window
     {
         var sb = new System.Text.StringBuilder();
         sb.Append($"Removed metadata from {report.ChangedCount} of {report.Results.Count} files; saved ");
-        sb.Append(FormatBytes(report.TotalSavedBytes));
+        sb.Append(Formatting.FormatBytes(report.TotalSavedBytes));
         sb.Append('.');
         if (report.Failures.Count > 0)
         {
@@ -333,12 +333,5 @@ public partial class OverlayWindow : Window
             if (report.Failures.Count > 3) sb.Append($"\n - … and {report.Failures.Count - 3} more.");
         }
         _vm.StatusText = sb.ToString();
-    }
-
-    private static string FormatBytes(long b)
-    {
-        if (b < 1024) return $"{b} B";
-        if (b < 1024 * 1024) return $"{b / 1024.0:0.0} KB";
-        return $"{b / 1024.0 / 1024.0:0.00} MB";
     }
 }

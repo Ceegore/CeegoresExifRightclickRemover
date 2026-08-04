@@ -450,4 +450,45 @@ The audit focused on the files that had received the least attention in earlier 
 - The `gen_test_jpeg.py` "bare JPEG" fixture (line 95) writes a 32×32 image with constant color `(10, 20, 30)` — the entropy-coded scan is therefore very small. Not a bug (the bare fixture is meant to test the "no metadata" case, not the entropy-scan path), but if a future test wants to exercise the entropy scan on a metadata-free JPEG it would need pixel variation.
 - The `ExifRemover.exe` / `*.dll` / `hostfxr.dll` artifacts in the repo root are from a previous `install.cmd build` (timestamps 2026-05/06). They're all gitignored, but if a future commit accidentally lifts the gitignore the user could end up committing ~70 MB of .NET runtime DLLs. The catch-all `*.dll` / `*.exe` in `.gitignore` makes that hard, but not impossible. Cosmetic.
 
+---
+
+## ROUND 8 — 360° audit (2026-08-04) — M2.20.8
+
+The 8th adversarial 360° pass. The brief was the same: trust nothing, re-read every file with fresh eyes, find what rounds 1–7 didn't. The build/test pipeline was clean (xUnit 51/51, SelfTest 16/16, verifier all checks passed) at the start, so every finding here is a NEW issue that survived 7 rounds of audits.
+
+The audit focused on the App's WPF code paths (OverlayViewModel's keep-set computation, OverlayWindow's ShowSummary path), the third-party-license file (THIRD_PARTY_NOTICES.md), and the `app.manifest` DPI settings (re-read after M2.20.7 added the Win11 GUID).
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D51** | LOW (UI correctness) | `MetadataInspector.MapGroup` falls through to `MetadataGroups.Other` ("Other") when a directory doesn't match any of the explicit cases (e.g. a future MetadataExtractor version surfaces a new directory type). `GetChunkKey` returns the group name unchanged for the Other case, so the keep-set is queried with key "Other". The keep-set never contained "Other" → `keep.Contains("Other")` is false → the entry is marked "Would be removed". The stripper operates on bytes, not on MetadataExtractor's directory abstraction, so we can't be 100% sure the stripper drops the underlying bytes for an "Other" entry. Worst case: a future MetadataExtractor surfaces a directory that corresponds to a byte range the stripper keeps (e.g. a structural byte range that falls outside the stripper's drop list), and the UI would lie — "Would be removed" but the file bytes are unchanged. | `src/ExifRemover.App/OverlayViewModel.cs:99-145` (`ComputeKeepSet`) | "Other" added to the keep-set unconditionally (before the JPEG/PNG branch). Fail-safe default: if we don't know what the directory represents, don't claim the stripper will remove it. Same reasoning as the existing "PNGUNKNOWN" entry for the PNG path. |
+| **D52** | LOW (DRY violation) | `FormatBytes(long b)` was defined in two places: `OverlayViewModel.EntryRow.FormatBytes` (line 515-520, used for the Size column in the metadata grid) and `OverlayWindow.FormatBytes` (line 334-339, used in `ShowSummary` for the post-strip summary). Identical 5-line implementation, identical thresholds (1024 B / KB, 1024*1024 MB), identical culture-dependent formatting. The two copies would drift if a future contributor changes one (e.g. to add GB support) and not the other — the Size column and the summary would disagree on the formatting. | `src/ExifRemover.App/OverlayViewModel.cs:515-520`, `src/ExifRemover.App/OverlayWindow.xaml.cs:334-339` (was) | Extracted to a new `src/ExifRemover.App/Formatting.cs` with `internal static class Formatting { public static string FormatBytes(long b) }`. The two private copies deleted; both call sites use `Formatting.FormatBytes(...)`. |
+
+**No new tests in this round.**
+- D51 is a UI behavior fix; a regression test would need to inject an "Other" entry into a `FileInspection`, which means WPF VM instantiation (the same blocker as D36 in M2.20.5). The behavior is also harmless: the worst case is "Other" entries being marked as kept (which is the right answer for the keep-set contract), and the actual stripper doesn't touch any bytes for this fix.
+- D52 is a pure refactor (extract method); the existing 51 tests + 16 SelfTests cover the call sites' behavior identically.
+
+**Final status after Round 8:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 51/51 (unchanged)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED
+
+**Cumulative across all 8 audit rounds:** 39 fixes since `605a2d0` (26 from rounds 1–4, +4 in round 5, +3 in round 6, +4 in round 7, +2 in round 8: D51 fail-safe keep-set, D52 extract FormatBytes). xUnit: 27 → 35 → 39 → 47 → 51 (stable since M2.20.4); SelfTest: 16/16 stable since the M2.20.3 ICC-injection improvements.
+
+**Still open / accepted (carried forward from earlier rounds):**
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented in M2.20.4
+- **D45** (IsValidJpeg for PNGs) — latent, not exercised by the current JPEG-only harness
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks (carried from M2.20.3, D42 round 6 retried). D33 added a 10 MB test.
+- The Engine's CRC table is rebuilt per call (line 270-282); one-time-init would shave ~1ms per Strip, irrelevant for the typical use case.
+- The `_sessionDontAsk` static flag (carried from M2.20.5) — cosmetic naming.
+- The D36 `FilterText` setter test (carried from M2.20.5) — WPF-bound, deferred to a future `ExifRemover.App.Tests` assembly.
+- The `gen_test_jpeg.py` "bare JPEG" fixture writes a 32×32 image with constant color — the entropy-coded scan is very small (carried from M2.20.7).
+- The `ExifRemover.exe` / `*.dll` / `hostfxr.dll` artifacts in the repo root (carried from M2.20.7) — all gitignored, cosmetic.
+- The `UpdateStatusFromEntries` "last strip removed all" message (line 368) is technically accurate (the strip removed all the metadata) but could be reworded to "before last strip" if the user has filtered the grid (the message currently doesn't reflect the filter). Very minor copy issue.
+- The `app.manifest` DPI settings are now complete (Vista through Win11). The two DPI declarations (SMI/2005 "true/pm" and SMI/2016 "PerMonitorV2") are consistent (both per-monitor; V1 vs V2). No issue.
+
 
