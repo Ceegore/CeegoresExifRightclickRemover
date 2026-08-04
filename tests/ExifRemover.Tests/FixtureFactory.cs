@@ -260,6 +260,54 @@ internal static class FixtureFactory
     }
 
     /// <summary>
+    /// PNG with a hIST (palette histogram) chunk. hIST is dropped under Privacy and
+    /// AllMetadata but kept under Minimal — a behavior the user can't see unless the
+    /// PngChunkProbe surfaces it (D69 in M2.20.18). Used by
+    /// Inspect_SurfacesPngHistAsSeparateGroup to prove the inspector now reports hIST.
+    ///
+    /// Uses color type 2 (truecolor RGB) with the standard IDAT bytes from the
+    /// PngWithTextTimeExifIccp fixture so MetadataExtractor's PNG reader is happy.
+    /// The hIST chunk in a truecolor PNG is technically invalid (hIST is only
+    /// meaningful for indexed-color images, per the PNG spec), but the inspector
+    /// does not validate spec semantics — it just walks chunks and reports them.
+    /// The point of this fixture is to exercise the surface path, not the
+    /// real-world validity of the chunk.
+    /// </summary>
+    public static byte[] PngWithHistChunk()
+    {
+        var ms = new MemoryStream();
+        var bw = new BinaryWriter(ms);
+        bw.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+
+        WritePngChunk(bw, "IHDR", new byte[]
+        {
+            0x00,0x00,0x00,0x04,
+            0x00,0x00,0x00,0x04,
+            0x08,0x02,0x00,0x00,0x00  // bit depth 8, color type 2 (truecolor RGB)
+        });
+
+        // hIST: 4 bytes of histogram data (2 bytes per palette entry frequency).
+        // Per the PNG spec, hIST is only valid for color type 3; we use it in a
+        // color-type-2 PNG anyway to exercise the surface path. The stripper and
+        // inspector don't validate spec semantics.
+        WritePngChunk(bw, "hIST", new byte[] { 0x00, 0x10, 0x00, 0x20 });
+
+        WritePngChunk(bw, "IDAT", new byte[]
+        {
+            0x78, 0x01, 0x01, 0x06, 0x00, 0xFB, 0xFF, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+            0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x04, 0x6A, 0x6F, 0xC2, 0x68
+        });
+
+        WritePngChunk(bw, "IEND", Array.Empty<byte>());
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// PNG that includes a "private" ancillary chunk ("tEST") whose first byte is
     /// lowercase (ancillary) but whose remaining bytes are mixed-case — that's a
     /// valid "private" chunk by the PNG spec. The stripper's ShouldDrop has no case

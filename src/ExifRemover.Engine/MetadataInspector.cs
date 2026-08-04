@@ -205,9 +205,11 @@ internal static class PngChunkProbe
 
     public static void ProbeForMissingEntries(string path, List<MetadataEntry> sink)
     {
-        // Only add an entry if MetadataExtractor didn't already surface one. Today the
-        // gap is eXIf; if MetadataExtractor ever adds separate surfacing, this becomes a no-op.
-        if (sink.Any(e => e.Group == MetadataGroups.PngExif))
+        // Only add an entry if MetadataExtractor didn't already surface one. The gaps
+        // today are eXIf (rolled into PngText) and hIST (no PngDirectory.TagHistogram);
+        // if MetadataExtractor ever adds separate surfacing for either, this becomes a no-op.
+        if (sink.Any(e => e.Group == MetadataGroups.PngExif)
+            || sink.Any(e => e.Group == MetadataGroups.PngHist))
         {
             return;
         }
@@ -239,6 +241,22 @@ internal static class PngChunkProbe
                         $"Embedded EXIF data ({length} bytes)",
                         EstimatedSizeBytes: length,
                         IsPrivacySensitive: true));
+                }
+
+                // D69 (M2.20.18): the hIST chunk is a palette histogram. MetadataExtractor
+                // doesn't surface it as a tag (no PngDirectory.TagHistogram), and the stripper
+                // drops it under Privacy/AllMetadata. Without this probe the user has no
+                // way to know hIST exists or that it would be removed. Surface it here so the
+                // grid shows it; the keep-set (PNGHIST, Minimal-only) marks it "Would be
+                // removed" under Privacy/AllMetadata and "Would be kept" under Minimal.
+                if (type == "hIST")
+                {
+                    sink.Add(new MetadataEntry(
+                        MetadataGroups.PngHist,
+                        "Palette histogram",
+                        $"Histogram of palette entries ({length} bytes)",
+                        EstimatedSizeBytes: length,
+                        IsPrivacySensitive: false));
                 }
 
                 // Advance past the chunk data and the 4-byte CRC trailer.
