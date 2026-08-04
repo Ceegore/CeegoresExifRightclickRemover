@@ -18,6 +18,29 @@ the `M2.20.x` (audit round) convention used by the project.
 - `.github/workflows/build.yml` — CI workflow: build + xUnit + SelfTest
   on Windows and Ubuntu runners, .NET 8.
 
+## M2.20.15 — 2026-08-04 — 360° audit round 12
+- **D60** `src/ExifRemover.App/AboutWindow.xaml:37` still said "ExifRemover
+  itself is licensed under AGPL-3.0-or-later" — the in-app About dialog was
+  the fourth place that drifted from the actual MIT license (M2.20.11b fixed
+  LICENSE, M2.20.11c fixed `README.md:126`, M2.20.12 fixed `README.md:85`,
+  this round fixes the About dialog). Users who clicked the "?" button saw
+  the old AGPL-3.0 text.
+- **D61** `src/ExifRemover.App/OverlayWindow.xaml` — the `StatusText` TextBlock
+  bound to the post-strip summary did not have `TextWrapping="Wrap"`. The
+  summary string uses `\n` for newlines (the failure-list lines in a multi-
+  file strip) and a long failure message would have run off the right edge
+  of the status strip. Fix: add `TextWrapping="Wrap"` so the multi-line
+  summary wraps within the column.
+- **D62** `src/ExifRemover.Engine/AtomicFile.cs` — the `private static
+  TryDelete(string path)` method was never called. Both strippers use
+  `File.Delete` directly with their own try/catch in the outer `catch`
+  block. Dead code; deleted outright.
+- **D63** `PLAN.md:226` (Build & ship §7) still described the project as
+  licensed under AGPL-3.0-or-later. Fourth AGPL→MIT drift (D60 was the
+  in-app About dialog, D63 was the planning doc).
+- 0 source-code or test changes for D60/D61/D62/D63 (D62 is a code change
+  but it's a 12-line dead-code deletion, no tests required).
+
 ## M2.20.11b — 2026-08-04 — adopt MIT license
 - LICENSE file replaced with the MIT text from the upstream remote
   (`Copyright (c) 2026 Ceegor`). README License section updated to match.

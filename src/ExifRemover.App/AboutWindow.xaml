@@ -34,7 +34,7 @@
                 library (Apache License 2.0, © Drew Noakes and contributors) for reading metadata.
             </TextBlock>
             <TextBlock TextWrapping="Wrap" Style="{StaticResource UiText}">
-                ExifRemover itself is licensed under AGPL-3.0-or-later. The metadata-rewriting code is original work.
+                ExifRemover itself is licensed under the MIT License. The metadata-rewriting code is original work.
             </TextBlock>
         </StackPanel>
 

@@ -128,7 +128,7 @@
                 <ColumnDefinition Width="220" />
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" x:Name="StatusText" Style="{StaticResource SubtleText}"
-                       VerticalAlignment="Center"
+                       VerticalAlignment="Center" TextWrapping="Wrap"
                        Text="{Binding StatusText}" />
             <ProgressBar Grid.Column="1" x:Name="Progress"
                          Minimum="0" Maximum="1"
