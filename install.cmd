@@ -98,6 +98,12 @@ REM        Shown in modern menu when any image file is right-clicked.
 REM   3. HKCU\Software\Classes\SystemFileAssociations\.<ext>\shell\ExifRemove
 REM      - Per-extension entries for .jpg, .jpeg, .png. Shown in legacy menu
 REM        (Show more options) reliably.
+REM
+REM D68 (M2.20.17): every reg add now goes through the :RegAdd helper which
+REM surfaces the error and aborts the install on the first failure. The pre-fix
+REM pattern (`reg add ... >nul 2>&1`) silently swallowed any error from
+REM permissions, registry locks, or AV interference — the user saw "Done." even
+REM when half the keys were missing. A partial install is a bug, not a state.
 REM ============================================================
 :install
 echo.
@@ -107,29 +113,46 @@ echo.
 
 REM (1) Application registration (Win 11 modern menu reads from Applications\<exe>\shell)
 echo Registering application shell verb ...
-reg add "HKCU\Software\Classes\Applications\ExifRemover.exe" /ve /d "ExifRemover" /f >nul
-reg add "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove" /ve /d "%VERB%" /f >nul
-reg add "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove" /v "Icon" /d "%ICON%" /f >nul
-reg add "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove\command" /ve /d "\"%EXE%\" \"%%1\"" /f >nul
+call :RegAdd "HKCU\Software\Classes\Applications\ExifRemover.exe" /ve /d "ExifRemover" /f
+call :RegAdd "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove" /ve /d "%VERB%" /f
+call :RegAdd "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove" /v "Icon" /d "%ICON%" /f
+call :RegAdd "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove\command" /ve /d "\"%EXE%\" \"%%1\"" /f
 
 REM (2) Image-class entry (covers all image file types via SystemFileAssociations)
 echo Registering under image class ...
-reg add "HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove" /ve /d "%VERB%" /f >nul
-reg add "HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove" /v "Icon" /d "%ICON%" /f >nul
-reg add "HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove\command" /ve /d "\"%EXE%\" \"%%1\"" /f >nul
+call :RegAdd "HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove" /ve /d "%VERB%" /f
+call :RegAdd "HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove" /v "Icon" /d "%ICON%" /f
+call :RegAdd "HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove\command" /ve /d "\"%EXE%\" \"%%1\"" /f
 
 REM (3) Per-extension entries (legacy "Show more options" menu)
 for %%E in (.jpg .jpeg .png) do (
     echo Registering %%E ...
-    reg add "HKCU\Software\Classes\SystemFileAssociations\%%E\shell\ExifRemove" /ve /d "%VERB%" /f >nul
-    reg add "HKCU\Software\Classes\SystemFileAssociations\%%E\shell\ExifRemove" /v "Icon" /d "%ICON%" /f >nul
-    reg add "HKCU\Software\Classes\SystemFileAssociations\%%E\shell\ExifRemove\command" /ve /d "\"%EXE%\" \"%%1\"" /f >nul
+    call :RegAdd "HKCU\Software\Classes\SystemFileAssociations\%%E\shell\ExifRemove" /ve /d "%VERB%" /f
+    call :RegAdd "HKCU\Software\Classes\SystemFileAssociations\%%E\shell\ExifRemove" /v "Icon" /d "%ICON%" /f
+    call :RegAdd "HKCU\Software\Classes\SystemFileAssociations\%%E\shell\ExifRemove\command" /ve /d "\"%EXE%\" \"%%1\"" /f
 )
 
 echo.
 echo Done. Right-click any image file in Explorer and look for '%VERB%'.
 echo To uninstall later, run: .\install.cmd uninstall
 echo.
+exit /b 0
+
+REM ============================================================
+REM Internal: reg add wrapper that aborts the install on any failure.
+REM Usage: call :RegAdd "<key>" [/v <name>] [/d <data>] [/f ...]
+REM Replaces the silent-swallow pattern `reg add ... >nul 2>&1`.
+REM ============================================================
+:RegAdd
+reg add %* >nul
+if errorlevel 1 (
+    echo.
+    echo ERROR: reg add failed for: %1
+    reg add %*
+    echo.
+    echo Aborting install. Re-run with admin rights if the registry is locked.
+    exit /b 1
+)
 exit /b 0
 
 REM ============================================================

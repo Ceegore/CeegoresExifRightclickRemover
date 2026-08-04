@@ -10,16 +10,18 @@
   </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
-      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />
-      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" />
-      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" />
-      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}" />
-      <!-- D48: Windows 11 supportedOS GUID. Without it, Windows 11 still runs the app
-           (the exe is forward-compatible) but the manifest is missing the explicit
-           "I am tested on Windows 11" hint that some Windows compatibility shims
-           and telemetry check. The GUID is the official Microsoft-published value. -->
-      <supportedOS Id="{e1b086e2-5834-4d6b-a0c5-321d5705261c}" />
+      <!-- D67 (M2.20.17): the Windows 10 GUID {8e0f7a12-...} also covers Windows 11
+           and Windows Server 2016/2019/2022 per Microsoft's official docs and the
+           SbSupportedOsList in ntdll.dll. There is no separate Windows 11 GUID.
+           The M2.20.7 D48 "fix" added a fabricated GUID {e1b086e2-5834-4d6b-a0c5-321d5705261c}
+           that is NOT a real Microsoft-published value — it was sourced from a misread
+           of a third-party blog and was kept for 10 rounds before this round caught
+           it. Removing the fake line; the Win 10 GUID below already covers Win 11. -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />  <!-- Windows 10 + Windows 11 + Server 2016/2019/2022 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />  <!-- Windows 8.1 + Server 2012 R2 -->
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" />  <!-- Windows 8 + Server 2012 -->
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" />  <!-- Windows 7 + Server 2008 R2 -->
+      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}" />  <!-- Windows Vista + Server 2008 -->
     </application>
   </compatibility>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">

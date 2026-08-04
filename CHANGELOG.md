@@ -5,6 +5,41 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.17 — 2026-08-04 — 360° audit round 14
+- **D67** `src/ExifRemover.App/app.manifest` contained a fabricated
+  Windows 11 `supportedOS` GUID (`{e1b086e2-5834-4d6b-a0c5-321d5705261c}`).
+  This GUID is NOT a Microsoft-published value. Microsoft's official
+  position (per https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests
+  and the `SbSupportedOsList` symbol in ntdll.dll) is that Windows 10/11
+  share the same supportedOS GUID
+  (`{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}`), and no separate Win 11
+  GUID has been published. The fake GUID was added by the M2.20.7
+  D48 round (10 rounds ago) with a claim that it was "the official
+  Microsoft-published value" — that claim was incorrect and
+  contradicted Microsoft's docs. Fix: removed the fabricated line,
+  added comments clarifying that the Win 10 GUID covers Win 11 +
+  Server 2016/2019/2022. Two new tests
+  (`AppManifest_AllSupportedOsGuids_AreMicrosoftPublished` and
+  `AppManifest_DoesNotDeclareFabricatedWin11Guid`) pin the
+  supportedOS list to the 5 Microsoft-published GUIDs so a future
+  "let me add a Win 12 / Server 2025 GUID" suggestion fails loudly.
+- **D68** `install.cmd` silently swallowed any `reg add` error
+  via the `>nul 2>&1` pattern. A failed registry write (e.g. AV
+  lock, permissions) would be invisible to the user — the script
+  would print "Done." even when half the keys were missing. Fix:
+  every `reg add` now goes through a new `:RegAdd` helper that
+  surfaces the error and aborts the install with `exit /b 1` on
+  the first failure. The pre-fix pattern was a security-adjacent
+  bug: a context-menu shell verb that's half-registered can leave
+  the user with a confusing "no menu entry" UX and no idea why.
+- xUnit: 62 → 64 tests (+2 for D67's "no fabrication" guard).
+- Meta-note: D67 is a textbook case of why repeated adversarial
+  audits matter. The M2.20.7 D48 "fix" was confidently landed
+  with a "Microsoft-published value" claim, and 10 subsequent
+  rounds approved it. The M2.20.17 round caught it by going to
+  the actual Microsoft source instead of trusting the prior
+  audit log.
+
 ## M2.20.16 — 2026-08-04 — 360° audit round 13
 - **D64** `README.md` §Installation step 2-3 contradicted §Building
   from source: the old text told the user to `cd` into
