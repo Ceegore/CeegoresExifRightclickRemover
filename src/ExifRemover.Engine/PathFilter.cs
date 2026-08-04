@@ -82,13 +82,20 @@ public static class PathFilter
 
     /// <summary>
     /// True for the three image extensions the stripper supports (case-insensitive).
+    /// Trailing whitespace in the extension is tolerated (e.g. a file named
+    /// "photo.jpg " — trailing space — yields <c>Path.GetExtension</c> returning
+    /// ".jpg " which is not equal to ".jpg"). D31 from M2.20.4: the previous strict
+    /// comparison dropped such files as "unsupported file type", which is misleading;
+    /// they're valid images with a path oddity. Trimming makes the check forgiving
+    /// without changing the set of valid extensions.
     /// Public so other call sites (e.g. the install.cmd registry writer, or future
     /// test fixtures) can reuse the same check.
     /// </summary>
     public static bool IsSupportedImageExtension(string extension)
     {
-        return string.Equals(extension, ".jpg", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(extension, ".jpeg", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase);
+        var trimmed = extension?.TrimEnd() ?? string.Empty;
+        return string.Equals(trimmed, ".jpg", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, ".jpeg", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, ".png", StringComparison.OrdinalIgnoreCase);
     }
 }

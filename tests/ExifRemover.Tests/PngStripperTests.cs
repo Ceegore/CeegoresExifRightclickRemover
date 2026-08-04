@@ -454,6 +454,59 @@ public class PngStripperTests : IDisposable
         Assert.True(ContainsChunk(bytes, "IEND"));
     }
 
+    [Fact]
+    public void Strip_LargeKeptIdat_AllocatesAndPreservesBytes()
+    {
+        // D33: the kept-chunk path in PngMetadataStripper allocates
+        // `new byte[length]` for each kept chunk (the CRC must be recomputed over
+        // the data, and the data must be copied to the output). The existing
+        // B9 test (`Strip_SkippedChunkDoesNotAllocatePayloadBuffer`) exercises the
+        // SKIP path with a 1 MB tEXt that gets dropped — but the KEPT path
+        // (a kept IDAT) is only ever exercised with the few-hundred-byte IDAT
+        // in the standard fixture. This test pins the kept-chunk allocation path
+        // with a 10 MB IDAT to catch a regression where the buffer is too small
+        // (e.g. someone caps it at 1 MB) or the read loop is wrong for multi-MB
+        // chunks. The 256 MB cap is independently tested by
+        // `PngMetadataStripper_RejectsChunkLengthAboveCap`; 10 MB is well under
+        // the cap and well above the "few hundred KB" typical IDAT.
+        const int idatSize = 10 * 1024 * 1024; // 10 MB
+        var idat = new byte[idatSize];
+        // Deterministic fill: pattern that compresses to something non-trivial
+        // but doesn't trigger the CRC's all-zero fast path. zlib stream header
+        // + a simple repeating pattern.
+        idat[0] = 0x78; // zlib CMF (deflate, window 32K)
+        idat[1] = 0x01; // zlib FLG (no dictionary, compression level 0)
+        for (int i = 2; i < idatSize; i++)
+        {
+            idat[i] = (byte)((i * 31) ^ (i >> 8));
+        }
+
+        using var ms = new MemoryStream();
+        ms.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A });
+        WriteRawChunk(ms, "IHDR", new byte[]
+        {
+            0x00,0x00,0x00,0x04, 0x00,0x00,0x00,0x04,
+            0x08,0x02,0x00,0x00,0x00
+        });
+        WriteRawChunk(ms, "IDAT", idat);
+        WriteRawChunk(ms, "IEND", Array.Empty<byte>());
+
+        var src = WriteTemp(ms.ToArray(), $"er-bigidat-{Guid.NewGuid():N}.png");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+        _tempFiles.Add(outPath);
+
+        var result = PngMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
+        Assert.Equal(0, result.DroppedSegments); // IDAT is always kept
+        Assert.False(result.Changed);
+
+        // The output IDAT must be byte-identical to the input IDAT (no re-encoding
+        // of pixel data, ever).
+        var outBytes = File.ReadAllBytes(outPath);
+        var outIdat = ExtractIdatPayload(outBytes);
+        Assert.Equal(idatSize, outIdat.Length);
+        Assert.Equal(idat, outIdat);
+    }
+
     private static bool ContainsChunk(byte[] pngBytes, string type)
     {
         int pos = 8;

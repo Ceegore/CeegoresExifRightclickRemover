@@ -98,4 +98,32 @@ public class PathFilterTests
         Assert.False(PathFilter.IsSupportedImageExtension(""));
         Assert.False(PathFilter.IsSupportedImageExtension(".webp"));
     }
+
+    [Fact]
+    public void FilterImagePaths_TrailingSpaceInExtension_KeepsTheFile()
+    {
+        // D31: a file named "photo.jpg " (trailing space) has Path.GetExtension
+        // return ".jpg " (with space), which the previous strict comparison
+        // rejected as "unsupported file type". Such files are valid images with a
+        // path oddity (command-line tools can create them; Windows Explorer
+        // generally can't, but PowerShell can). The fix trims trailing whitespace
+        // from the extension before checking, so the file is kept and reported
+        // with its full path.
+        var result = PathFilter.FilterImagePaths(new[] { "photo.jpg ", "clean.png\t" });
+        Assert.Equal(2, result.Kept.Count);
+        Assert.Empty(result.Dropped);
+    }
+
+    [Fact]
+    public void IsSupportedImageExtension_TrimsTrailingWhitespace()
+    {
+        // D31: the public IsSupportedImageExtension helper is also more forgiving
+        // — ".jpg " (with space) is now considered supported. The other direction
+        // (leading space) is not normalized; ". jpg" is not a valid extension.
+        Assert.True(PathFilter.IsSupportedImageExtension(".jpg "));
+        Assert.True(PathFilter.IsSupportedImageExtension(".png\t"));
+        Assert.True(PathFilter.IsSupportedImageExtension(".jpeg   "));
+        Assert.False(PathFilter.IsSupportedImageExtension(". jpg"));
+        Assert.False(PathFilter.IsSupportedImageExtension("jpg")); // no dot
+    }
 }

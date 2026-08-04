@@ -69,6 +69,12 @@ public partial class OverlayWindow : Window
         // and returns an Error-bearing FileInspection, so this is currently theoretical —
         // but a future MetadataExtractor version could throw, and the unobserved-task
         // exception would silently leave IsBusy=true with the grid empty).
+        // D15: every Dispatcher.Invoke in this Task.Run is wrapped in SafeInvoke, which
+        // no-ops if the dispatcher has begun shutdown (the user closed the window
+        // mid-inspect). The strip itself is unaffected — the source file is only
+        // written in RunRemove, and the catch/finally of the stripper handles partial
+        // writes — so a mid-inspect window close is a clean "user changed their mind",
+        // not a data-loss scenario.
         Task.Run(() =>
         {
             try
@@ -77,7 +83,7 @@ public partial class OverlayWindow : Window
             }
             catch (Exception ex)
             {
-                Dispatcher.Invoke(() =>
+                SafeInvoke(() =>
                 {
                     _vm.IsBusy = false;
                     _vm.StatusText = $"Could not inspect files: {ex.Message}";
@@ -87,7 +93,7 @@ public partial class OverlayWindow : Window
                 });
                 return;
             }
-            Dispatcher.Invoke(() =>
+            SafeInvoke(() =>
             {
                 _vm.IsBusy = false;
                 RemoveButton.IsEnabled = true;
@@ -95,6 +101,29 @@ public partial class OverlayWindow : Window
                 ReInspectButton.IsEnabled = true;
             });
         });
+    }
+
+    /// <summary>
+    /// D15: invoke <paramref name="action"/> on the UI thread, but only if the dispatcher
+    /// is still alive. If the window has been closed (the user clicked X, or the app is
+    /// shutting down), <c>Dispatcher.Invoke</c> throws <c>TaskCanceledException</c> and
+    /// the inner <see cref="Task"/> faults — producing an unobserved-task-exception log
+    /// entry and, with the wrong runtime config, a process crash. None of the post-strip
+    /// UI updates are essential (the file is already written; the user has already left),
+    /// so the safe behaviour is to no-op when the window is going away.
+    /// </summary>
+    private void SafeInvoke(Action action)
+    {
+        if (Dispatcher.HasShutdownStarted) return;
+        try
+        {
+            Dispatcher.Invoke(action);
+        }
+        catch (TaskCanceledException)
+        {
+            // Dispatcher shut down between the HasShutdownStarted check and the Invoke.
+            // Same as the above: the UI is going away, the file is already on disk.
+        }
     }
 
     private void ShowFatal(string message)
@@ -155,12 +184,15 @@ public partial class OverlayWindow : Window
             }
             catch (Exception ex)
             {
-                Dispatcher.Invoke(() =>
+                // D15: SafeInvoke no-ops if the window is closing. The re-inspect is
+                // a read-only operation; the worst case if we get here is a missing
+                // status message, not data loss.
+                SafeInvoke(() =>
                 {
                     _vm.StatusText = $"Could not re-inspect: {ex.Message}";
                 });
             }
-            Dispatcher.Invoke(() =>
+            SafeInvoke(() =>
             {
                 _vm.IsBusy = false;
                 ReInspectButton.IsEnabled = true;
@@ -245,7 +277,10 @@ public partial class OverlayWindow : Window
             }
             catch (Exception ex)
             {
-                Dispatcher.Invoke(() =>
+                // D15: SafeInvoke no-ops if the window has been closed mid-strip. The
+                // stripper's own catch already deleted the temp output, so the source
+                // is safe; we just lose the user-facing error message.
+                SafeInvoke(() =>
                 {
                     _vm.IsBusy = false;
                     _vm.StatusText = $"Strip failed: {ex.Message}";
@@ -256,7 +291,11 @@ public partial class OverlayWindow : Window
                 return;
             }
 
-            Dispatcher.Invoke(() =>
+            // D15: same guard for the success path. The stripped files are already
+            // on disk by the time we get here (atomic File.Replace / sibling write);
+            // a missing summary message is the only consequence of the window having
+            // closed during the strip.
+            SafeInvoke(() =>
             {
                 _vm.IsBusy = false;
                 _vm.ProgressValue = 1.0;

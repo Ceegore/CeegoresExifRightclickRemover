@@ -104,4 +104,37 @@ public class StripPipelineTests : IDisposable
         Assert.Equal(1, report.SuccessCount);
         Assert.Single(report.Failures);
     }
+
+    [Fact]
+    public void StripBatch_CorruptJpegWithValidExtension_RecordsFailure_AndContinuesBatch()
+    {
+        // D32: the existing StripBatch_UnsupportedFile test covers a file with the
+        // wrong extension (.txt), which PathFilter drops before the stripper even
+        // sees it. A different failure mode is a file with a VALID image extension
+        // but a corrupt header (e.g. a partial download saved as .jpg). The stripper
+        // hits ImageFormat.Unknown and throws NotSupportedException — a different
+        // exception type than the one PathFilter would have raised. The batch must
+        // still record this as a failure (in Failures, not Results) and continue
+        // processing the other files.
+        var good = Path.Combine(Path.GetTempPath(), $"er-corrupt-good-{Guid.NewGuid():N}.jpg");
+        File.WriteAllBytes(good, FixtureFactory.JpegWithExifXmpIccAndComment());
+        _tempFiles.Add(good);
+
+        // A "corrupt JPEG": valid .jpg extension, but the first 3 bytes are not the
+        // JPEG SOI marker. ImageFormatDetector returns Unknown, the stripper throws
+        // NotSupportedException, and the batch records it as a failure.
+        var corrupt = Path.Combine(Path.GetTempPath(), $"er-corrupt-bad-{Guid.NewGuid():N}.jpg");
+        File.WriteAllBytes(corrupt, new byte[] { 0x42, 0x4D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+        _tempFiles.Add(corrupt);
+
+        var report = StripPipeline.StripBatch(new[] { good, corrupt }, overwriteSource: false, StripProfile.Privacy);
+
+        // The good file is stripped, the corrupt file is in Failures, the batch did
+        // not abort on the first failure.
+        Assert.Single(report.Results);
+        Assert.Single(report.Failures);
+        Assert.Equal(corrupt, report.Failures[0].Path);
+        Assert.Contains("Unsupported file format", report.Failures[0].Error);
+        Assert.True(File.Exists(good), "the source file of the failed entry must remain on disk for inspection");
+    }
 }

@@ -287,3 +287,42 @@ Privacy and AllMetadata both produce 2058 bytes (same behavior for JPEG: both st
 - The `OverlayWindow_Loaded` `Task.Run` doesn't observe the inner exception if `_vm.InspectAll` throws. `MetadataInspector.Inspect` catches all exceptions internally, so this is theoretical, but defensive `try/catch` would be cleaner.
 - The clipboard access in `CopyValue_Click` / `CopyRow_Click` can throw `COMException` if the clipboard is in use by another process. Not caught. Not a real problem in interactive use.
 
+---
+
+## ROUND 4 — 360° audit (2026-08-04) — M2.20.4
+
+The 4th adversarial 360° pass. The brief was the same as before: trust nothing, re-read every file with fresh eyes, find what rounds 1–3 didn't. The build/test pipeline was clean (xUnit 47/47, SelfTest 16/16, verifier all checks passed) at the start, so every finding here is a NEW issue that survived 3 rounds of audits.
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D15** | MEDIUM | `Dispatcher.Invoke` inside every `Task.Run` callback in `OverlayWindow.xaml.cs` (6 call sites: `OverlayWindow_Loaded` × 2, `ReInspectButton_Click` × 2, `RunRemove` × 2) throws `TaskCanceledException` if the user closes the overlay window mid-operation (initial inspect, re-inspect, or strip). The Task then faults, the unobserved-exception handler logs it, and the window is left in an inconsistent state (`IsBusy=true`, buttons disabled) for any subsequent process that shares the same dispatcher. The strip itself is fine — the stripper's catch already cleans up the temp file — but the unobserved-task exception is noise that could hide real future regressions, and a process that sets `<ThrowUnobservedTaskExceptions>` would crash. | `OverlayWindow.xaml.cs:80, 90, 158, 163, 248, 259` | New `SafeInvoke(Action)` helper: checks `Dispatcher.HasShutdownStarted` and wraps the `Invoke` in a `TaskCanceledException` catch. All 6 sites converted. The UI is going away at that point so the update is safe to drop. |
+| **D31** | MEDIUM | `PathFilter.IsSupportedImageExtension` did an exact-string comparison: `string.Equals(ext, ".jpg", OrdinalIgnoreCase)`. A file like `photo.jpg ` (trailing space in the filename) has `Path.GetExtension` return `.jpg ` (with the space), which the strict comparison rejected. Such files are valid images with a path oddity — PowerShell and some command-line tools can create them; Windows Explorer generally can't. The previous behavior dropped them as "unsupported file type", which is misleading. | `PathFilter.cs:88-93` (was strict; now `TrimEnd` before compare) | `IsSupportedImageExtension` now trims trailing whitespace from the extension before comparing. `FilterImagePaths` benefits automatically (it goes through `IsSupportedImageExtension`). |
+| **D32** | MEDIUM (test gap) | No test for a corrupt JPEG (valid `.jpg` extension, but bad header bytes) in a batch. The existing `StripBatch_UnsupportedFile_…` test uses a `.txt` (wrong extension), which `PathFilter` drops *before* the stripper sees it. A corrupt JPEG is a different code path: the extension check passes, the format detector returns `ImageFormat.Unknown`, the stripper throws `NotSupportedException`. The batch's catch must still record this in `Failures` (not `Results`) and continue processing other files. | `tests/ExifRemover.Tests/StripPipelineTests.cs` (new test) | New `StripBatch_CorruptJpegWithValidExtension_RecordsFailure_AndContinuesBatch`: writes a valid JPEG + a 8-byte file with `0x42 0x4D` header (not a JPEG SOI) but `.jpg` extension; asserts one Result, one Failure, the Failure's error mentions "Unsupported file format", and the source file of the failed entry is still on disk. |
+| **D33** | MEDIUM (test gap) | No test for a large PNG IDAT (the kept-chunk allocation path). The B9 test (`Strip_SkippedChunkDoesNotAllocatePayloadBuffer`) uses a 1 MB tEXt that gets *dropped* — so it exercises the `SkipExactly` path, not the kept-chunk path. The kept-chunk path in `PngMetadataStripper` allocates `new byte[length]` and the existing fixtures only have a few-hundred-byte IDAT. A regression where the buffer is too small (e.g. someone caps it at 1 MB "for safety") or the read loop is wrong for multi-MB chunks would not be caught. | `tests/ExifRemover.Tests/PngStripperTests.cs` (new test) | New `Strip_LargeKeptIdat_AllocatesAndPreservesBytes`: 10 MB IDAT with deterministic fill, asserts the stripper returns `DroppedSegments=0`, `Changed=false`, and the output IDAT is byte-identical to the input. The 256 MB cap is independently tested by `PngMetadataStripper_RejectsChunkLengthAboveCap`; 10 MB is well under the cap and well above "a few hundred KB". |
+| **D35** | LOW (design limitation, documented) | `JpegMetadataStripper.ShouldDrop` drops APP14 (Adobe marker, 0xEE) along with every other 0xE0–0xEF marker. APP14 is the carrier of the color transform (RGB, YCbCr, YCCK) for CMYK JPEGs — Photoshop's "Save for Web" can produce CMYK JPEGs that rely on it. Stripping APP14 doesn't leak metadata; it makes a CMYK JPEG fall back to YCbCr interpretation, producing a color shift on decode. The current design ("strip everything except JFIF and ICC") is documented in `StripProfileCatalog` and the audit log; the user accepted it for v1. | `JpegMetadataStripper.cs:151-192` (unchanged) | Not fixed. Documented here as a known limitation: if the user has a CMYK JPEG and a privacy-stripped version looks color-shifted, the cause is the dropped APP14 marker. A future v1+1 "Preserve color management" option could add a "minimal+Adobe" profile that keeps APP14. Out of scope for v1. |
+
+**Test coverage added (4 new tests, xUnit went 47→51):**
+- `FilterImagePaths_TrailingSpaceInExtension_KeepsTheFile` — proves D31 (D31 fix + the filter integration)
+- `IsSupportedImageExtension_TrimsTrailingWhitespace` — pins the public-helper contract
+- `StripBatch_CorruptJpegWithValidExtension_RecordsFailure_AndContinuesBatch` — proves D32
+- `Strip_LargeKeptIdat_AllocatesAndPreservesBytes` — proves D33
+
+**Final status after Round 4:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 51/51 (was 47/47 after M2.20.3; +4 new tests for D31/D32/D33)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED (with ICC-injected input that exercises the profile differences)
+
+**Cumulative across all 4 audit rounds:** 26 fixes, +24 tests since `605a2d0`. xUnit went 27 → 35 → 39 → 47 → 51; SelfTest stable at 16/16 since the Round-3 ICC-injection improvements.
+
+**Still open / accepted (from earlier rounds, not addressed in M2.20.4 either):**
+- **L1** (README AllMetadata "plus ICC" wording) — still ambiguous in the profile table; cosmetic
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented above
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred, low priority — carried forward from M2.20.3):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks. The D33 test now covers a 10 MB IDAT (well above the typical "few hundred KB" and well below the 256 MB cap), which pins the contract. Streaming CRC for arbitrary chunk sizes is still deferred.
+- The clipboard access in `CopyValue_Click` / `CopyRow_Click` is now wrapped in try/catch (M2.20.3 D13). D15 (this round) is the analogous fix for the dispatcher-shutdown failure mode.
+
+
