@@ -21,10 +21,11 @@ jobs:
     name: windows-build-test-verify
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      # D66: bumped v4 -> v5 (Node 24) to clear the GitHub deprecation warning.
+      - uses: actions/checkout@v5
 
       - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -41,7 +42,7 @@ jobs:
         run: dotnet run --project src/ExifRemover.SelfTest -c Release --no-build
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -65,10 +66,10 @@ jobs:
     name: linux-engine-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 

@@ -209,6 +209,35 @@ public class JpegStripperTests : IDisposable
     }
 
     [Fact]
+    public void Strip_App1SegmentTruncatedWithinPayload_ThrowsAndLeavesOriginalUntouched()
+    {
+        // D65: a malformed JPEG whose APP1 segment-length field claims more bytes of payload
+        // than the file actually contains. The pre-fix stripper would silently seek past EOF
+        // (the SkipExactly method did not check Position + count > Length on the seekable
+        // branch), then the next ReadMarker would throw a confusing "no marker" error. The
+        // post-fix stripper fails fast at the skip itself with a clear "during segment skip"
+        // message — same defensive pattern as the PNG stripper's SkipExactly.
+        var bytes = new List<byte>();
+        bytes.Add(0xFF); bytes.Add(0xD8); // SOI
+        bytes.Add(0xFF); bytes.Add(0xE1); bytes.Add(0x00); bytes.Add(0x14);
+        // APP1 marker with segLen = 20 (so payloadLen = 18), but we only write 4 bytes of
+        // payload. The stripper tries to skip 14 more bytes that don't exist.
+        for (int i = 0; i < 4; i++) bytes.Add(0);
+
+        var src = WriteTemp(bytes.ToArray(), $"er-truncinseg-{Guid.NewGuid():N}.jpg");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.jpg");
+        _tempFiles.Add(outPath);
+
+        var ex = Assert.ThrowsAny<Exception>(() => JpegMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy));
+        // The error message identifies the failure as a "segment skip" overrun, not a "no
+        // marker" condition. This matters for users debugging a bad file — the old
+        // "no marker" message pointed at a symptom, not the root cause.
+        Assert.Contains("segment skip", ex.Message);
+        Assert.Equal(bytes.ToArray(), File.ReadAllBytes(src));
+        Assert.False(File.Exists(outPath));
+    }
+
+    [Fact]
     public void Strip_OverwriteSource_ReplacesOriginalAtomically()
     {
         var src = WriteTemp(FixtureFactory.JpegWithExifXmpIccAndComment(), $"er-ovr-{Guid.NewGuid():N}.jpg");
