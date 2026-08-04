@@ -322,6 +322,40 @@ public class PngStripperTests : IDisposable
     }
 
     [Fact]
+    public void Inspect_SurfacesPngHistAsSeparateGroup()
+    {
+        // D69 (M2.20.18): MetadataExtractor's PNG reader has no TagHistogram tag, so a hIST
+        // chunk was silently invisible to the grid even though the stripper drops hIST under
+        // Privacy/AllMetadata. The PngChunkProbe now adds a PngHist entry whenever a hIST
+        // chunk is present, so the user can see "PNG hIST" in the grid and the action column
+        // shows "Would be removed" under Privacy/AllMetadata / "Would be kept" under Minimal.
+        var src = WriteTemp(FixtureFactory.PngWithHistChunk(), $"er-hist-{Guid.NewGuid():N}.png");
+        var inspection = MetadataInspector.Inspect(src);
+        var hist = inspection.Entries.SingleOrDefault(e => e.Group == MetadataGroups.PngHist);
+        Assert.NotNull(hist);
+        Assert.Equal("Palette histogram", hist.Name);
+        Assert.Equal(4L, hist.EstimatedSizeBytes);
+        Assert.False(hist.IsPrivacySensitive);
+    }
+
+    [Fact]
+    public void Strip_PngWithHist_HistEntryRemovedAfterStrip()
+    {
+        // After a Privacy strip, the hIST chunk is gone, so the PngHist entry
+        // must also be gone from the post-strip inspection. (If a future maintainer
+        // regresses the stripper to keep hIST under Privacy, this test fails — and
+        // similarly if the probe ever reports hIST after strip.)
+        var src = WriteTemp(FixtureFactory.PngWithHistChunk(), $"er-hist-out-{Guid.NewGuid():N}.png");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-out-{Guid.NewGuid():N}.png");
+        _tempFiles.Add(outPath);
+
+        PngMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
+
+        var post = MetadataInspector.Inspect(outPath);
+        Assert.DoesNotContain(post.Entries, e => e.Group == MetadataGroups.PngHist);
+    }
+
+    [Fact]
     public void Strip_PngWithExif_ExifEntryRemovedAfterStrip()
     {
         // After a Privacy strip, the eXIf chunk is gone, so the PngExif entry

@@ -5,6 +5,31 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.18 — 2026-08-04 — 360° audit round 15
+- **D69** `src/ExifRemover.Engine/MetadataInspector.cs:PngChunkProbe` —
+  the PNG `hIST` chunk (palette histogram) was silently invisible to the
+  review grid. `MetadataExtractor`'s PNG reader has no `TagHistogram` tag,
+  so a hIST chunk surfaced zero entries even though `PngMetadataStripper`
+  drops hIST under Privacy/AllMetadata and keeps it under Minimal. The
+  user had no way to know the file contained a hIST or that the stripper
+  would remove it. The PngChunkProbe (already used to surface the
+  rolled-into-PngText eXIf chunk) now also adds a PngHist entry when
+  a hIST chunk is present. The review grid shows "PNG hIST" with the
+  correct "Would be removed" / "Would be kept" action per profile (the
+  existing PNGHIST keep-set, Minimal-only, is unchanged). The hIST
+  behavior itself (drop under Privacy/AllMetadata, keep under Minimal)
+  is preserved — the fix is only that the chunk is now visible to the
+  user. Two new tests in `tests/ExifRemover.Tests/PngStripperTests.cs`:
+  `Inspect_SurfacesPngHistAsSeparateGroup` proves the probe now
+  surfaces hIST with the right group/name/size; `Strip_PngWithHist_
+  HistEntryRemovedAfterStrip` proves the post-strip inspection no
+  longer shows hIST (a future regression to the stripper that re-adds
+  hIST would also be caught because the chunk would still be present
+  in the output bytes). Both tests are adversarially verified
+  (reverting the probe addition makes the surfacing test fail with
+  "No PngHist entry found").
+- xUnit: 64 → 66 tests (+2 for D69's hIST surface/remove cases).
+
 ## M2.20.17 — 2026-08-04 — 360° audit round 14
 - **D67** `src/ExifRemover.App/app.manifest` contained a fabricated
   Windows 11 `supportedOS` GUID (`{e1b086e2-5834-4d6b-a0c5-321d5705261c}`).
