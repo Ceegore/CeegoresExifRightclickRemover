@@ -565,4 +565,16 @@ This round was a pure doc-drift pass — the third such round (after M2.20.6 D41
 - The `ExifRemover.exe` / `*.dll` artifacts in the repo root (carried from M2.20.7) — all gitignored, cosmetic.
 - The `.gitignore` entry `XamlBuild*.dll` (line 58) is redundant with the catch-all `*.dll` (line 32). Not a bug, just an over-specified pattern. Cosmetic.
 
+---
+
+## M2.20.11 — Tidy pass (2026-08-04)
+
+No code or doc changes; the audit pipeline is paused after 10 rounds. This entry documents the working-tree cleanup done in preparation for pushing to the public remote.
+
+**Working-tree cleanup.** The repo root had 246 gitignored .NET-runtime + published-exe artifacts (totalling ~152 MB) left over from previous `install.cmd build` invocations. They were all matched by the existing `.gitignore` (`*.dll`, `*.exe`, `*.pdb`, `*.deps.json`, `*.runtimeconfig.json`, plus the explicit `ExifRemover.*` entries) — i.e. the cleanup was a working-tree state change only, not a tracked-file change. All 246 files moved to the OS Trash via `mavis-trash` (the user-preferred deletion tool — `Remove-Item` is blocked by the safety guard per the project conventions). The repo root now has only the 11 source files (`.gitignore`, `ExifRemover.sln`, `install.cmd`, `LICENSE`, `PLAN.md`, `README.md`, `THIRD_PARTY_NOTICES.md`, `_temp11.md`, `gen_test_jpeg.py`, `uninstall.cmd`, `verify_real_images.py`) plus the `.claude/` agent-local directory (already gitignored). `git status` shows nothing to commit on `main` HEAD `a301997` (M2.20.10).
+
+**Foundation gate after cleanup:** build 0/0; xUnit 61/61; SelfTest 16/16; real-image verifier ALL CHECKS PASSED. The cleanup did not affect any tracked file or any build/test artifact the test pipeline relies on (those live under `bin/Release/net8.0/` and `bin/Release/net8.0-windows/`, not the repo root).
+
+**Next action:** add the public remote `https://github.com/Ceegore/CeegoresExifRightclickRemover` and push the 11-commit history (snapshot + 10 audit rounds).
+
 
