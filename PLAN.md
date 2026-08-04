@@ -28,27 +28,40 @@
 ExifRemover/
 ├── ExifRemover.sln
 ├── src/
-│   ├── ExifRemover.Engine/          (class lib, netstandard2.0 / net8.0)
+│   ├── ExifRemover.Engine/          (class lib, net8.0; embedded by Tests/SelfTest/Verifier to bypass WDAC)
 │   │   ├── MetadataInspector.cs     reads via MetadataExtractor, returns flat model
 │   │   ├── JpegMetadataStripper.cs  lossless JPEG segment rewriter
 │   │   ├── PngMetadataStripper.cs   lossless PNG chunk rewriter
 │   │   ├── ImageFormat.cs           sniff + dispatch
 │   │   ├── MetadataEntry.cs         display DTO (Group, Tag, Value, RawSize)
+│   │   ├── PathFilter.cs            file-extension + path-sanity filter (D12)
+│   │   ├── StripPipeline.cs         batch facade
+│   │   ├── StripProfile.cs          enum + catalog descriptions
 │   │   └── AtomicFile.cs            write-temp + File.Replace helper
-│   └── ExifRemover.App/             (WPF exe, net8.0-windows)
-│       ├── App.xaml / App.xaml.cs   single-instance routing + CLI parsing
-│       ├── Program.cs               entry: parses %* from shell, shows overlay
-│       ├── OverlayWindow.xaml       the overlay UI
-│       ├── OverlayViewModel.cs      MVVM, multi-file aware
-│       └── Resources/               icons, theme dictionaries
-├── install.cmd                      registers HKCU\Software\Classes\...\shell\ExifRemove
+│   ├── ExifRemover.App/             (WPF exe, net8.0-windows)
+│   │   ├── Program.cs               entry: parses %* from shell, shows overlay
+│   │   ├── OverlayWindow.xaml(.cs)  the overlay UI
+│   │   ├── OverlayViewModel.cs      MVVM, multi-file aware
+│   │   ├── AboutWindow.xaml(.cs)    version + licenses
+│   │   ├── ConfirmWindow.xaml(.cs)  multi-file "are you sure?" + don't-ask-again
+│   │   ├── BoolToVisibilityConverter.cs
+│   │   ├── app.manifest             PerMonitorV2 DPI awareness + Win10/11 supportedOS
+│   │   └── Resources/Theme.xaml     styles + colors
+│   └── ExifRemover.SelfTest/        (console exe, net8.0; runs the Engine end-to-end without xUnit — used when sandbox WDAC blocks loading the test DLL)
+│       └── Program.cs               16 test cases (strip + round-trip + edge cases)
+├── verify/                          (separate console exe, net8.0; real-image round-trip via Pillow)
+│   └── Program.cs                   reads JPEG from stdin, runs StripPipeline, emits verification report
+├── install.cmd                      registers HKCU\Software\Classes\...\shell\ExifRemove (3 places: per-ext, image class, Application)
 ├── uninstall.cmd                    removes the keys
 ├── README.md                        usage + uninstall notes
 └── tests/
-    └── ExifRemover.Tests/           xUnit, net8.0
-        ├── JpegStripperTests.cs
-        ├── PngStripperTests.cs
-        └── RoundTripFixture.cs      uses shipped test vectors + generated inputs
+    └── ExifRemover.Tests/           (xUnit, net8.0; engine sources embedded — see "Sandbox artefact" in §11)
+        ├── FixtureFactory.cs        generates all test vectors at test time (no committed fixture files)
+        ├── JpegStripperTests.cs     JPEG strip + round-trip + edge cases
+        ├── PngStripperTests.cs      PNG strip + CRC + edge cases
+        ├── PathFilterTests.cs       extension/keep/drop contract
+        ├── StripPipelineTests.cs    batch + corrupt-input contract
+        └── VerifierProcessTests.cs  spawns verify/ExifRemover.Verifier.exe end-to-end
 ```
 
 ### 3.1 CLI contract
@@ -190,17 +203,21 @@ The "?" button in the **top-right corner** of the overlay (separate from the per
 
 ## 6. Test strategy
 
-xUnit test project, runs via `dotnet test`. We commit a small set of test vectors under `tests/ExifRemover.Tests/Fixtures/`:
+xUnit test project, runs via `dotnet test`. **Test vectors are generated at test time** by `tests/ExifRemover.Tests/FixtureFactory.cs` — no committed fixture files. This keeps the repo text-only and ensures the tests are reproducible (the fixtures are bit-exact given the same fixture code). The fixture categories are:
 
-- `clean.jpg` — a baseline JPEG with only SOI/EOI + SOS. Should round-trip byte-identical.
-- `camera_sample.jpg` — a JPEG with EXIF (IFD0+SubIFD+GPS), XMP, ICC, comment. After strip: no `Exif`, no `XMP`, no `ICC`, no `COM` markers; image still decodable.
-- `screenshot.png` — PNG with `tEXt` (Software), `tIME`, `eXIf`, `iCCP`. After strip: only those ancillary chunks are gone; `IHDR`/`PLTE`/`IDAT`/`IEND` byte-identical, color management kept.
-- `transparent.png` — PNG with `tRNS`; the `tRNS` chunk must be kept.
-- `truncated.jpg` and `truncated.png` — must throw and **not** modify the source.
+- **Minimal JPEG / PNG** — baseline with only structural segments/chunks (SOI/EOI + SOS for JPEG; IHDR/IDAT/IEND for PNG). Should round-trip byte-identical.
+- **JPEG with EXIF/XMP/ICC/IPTC/COM** — full metadata fixture. After strip: no `Exif`, no `XMP`, no `ICC`, no `COM` markers; image still decodable.
+- **PNG with text/time/eXIf/iCCP** — full metadata fixture. After strip: only those ancillary chunks are gone; `IHDR`/`IDAT`/`IEND` byte-identical, color management kept.
+- **PNG with always-kept ancillary** (`pHYs`/`bKGD`/`sBIT`/`tRNS`) — must keep these across all profiles.
+- **PNG with unknown ancillary chunk** (`tEST`) — must keep (stripper's `ShouldDrop` falls through to "return false").
+- **JPEG with stuffed scan and RST marker** — regression for 0xFF00 byte-stuffing and 0xFFD0 RST0 mid-scan.
+- **Progressive JPEG with two scans** — regression for multi-SOS handling.
+- **JPEG with junk past EOI** — regression for trailing-garbage trimming.
+- **Truncated JPEG/PNG** — must throw and **not** modify the source.
 
 For every JPEG/PNG test we additionally verify with `dotnet`-side decode: write the post-strip file to disk and have the test re-parse it with `ImageMetadataReader.ReadMetadata` (from MetadataExtractor) and assert the union of all tag values is empty for the metadata categories we strip. (For PNG we also assert `IDAT` chunks are byte-identical to the originals via a positional compare.)
 
-We **also** generate randomized fuzz inputs in a `[Theory]` — random bytes with valid JPEG/PNG headers — and assert the stripper never throws *and* never produces a smaller-than-input file unless at least one metadata chunk was found and dropped.
+We **also** generate randomized fuzz inputs in a `[Fact]` (D/H1 — randomized bytes with valid JPEG SOI stamped on top, 100 iterations) and assert the stripper never throws *and* never produces a smaller-than-input file unless at least one metadata chunk was found and dropped.
 
 ## 7. Build & ship
 
@@ -231,13 +248,15 @@ We **also** generate randomized fuzz inputs in a `[Theory]` — random bytes wit
 
 ## 10. Concrete deliverable list
 
-1. `ExifRemover.sln` + solution-level `Directory.Build.props` (nullable on, latest C#, warnings-as-errors for our own code).
-2. `src/ExifRemover.Engine/ExifRemover.Engine.csproj` with the five engine files listed above.
-3. `src/ExifRemover.App/ExifRemover.App.csproj` (`net8.0-windows`, `UseWPF=true`) with `App.xaml`, `Program.cs`, `OverlayWindow.xaml(.cs)`, `OverlayViewModel.cs`.
-4. `tests/ExifRemover.Tests/ExifRemover.Tests.csproj` (xUnit) with the test classes above and a small fixture-generator for fuzz inputs.
-5. `install.cmd`, `uninstall.cmd`.
-6. `README.md` with usage, install/uninstall, and the privacy/security note that this tool never uploads, never phones home, runs 100% offline.
-7. Verified build (`dotnet build -c Release` succeeds) and verified test pass (`dotnet test` passes) on Windows 11.
+1. `ExifRemover.sln` (no `Directory.Build.props` — the per-csproj config sets `Nullable=enable`, `LangVersion=12`, `ImplicitUsings=enable`, and `TreatWarningsAsErrors=true` individually; M2.20.6 D41 noted the plan-vs-reality drift and corrected it).
+2. `src/ExifRemover.Engine/ExifRemover.Engine.csproj` with the engine files listed above.
+3. `src/ExifRemover.App/ExifRemover.App.csproj` (`net8.0-windows`, `UseWPF=true`) with `Program.cs`, `OverlayWindow.xaml(.cs)`, `OverlayViewModel.cs`, `AboutWindow.xaml(.cs)`, `ConfirmWindow.xaml(.cs)`, `app.manifest`, `Resources/Theme.xaml`.
+4. `src/ExifRemover.SelfTest/ExifRemover.SelfTest.csproj` (console exe, net8.0) — runs the Engine end-to-end without xUnit, used when sandbox WDAC blocks loading the test DLL.
+5. `verify/ExifRemover.Verifier.csproj` (console exe, net8.0) — invoked by `verify_real_images.py` for the real-camera-image round-trip check.
+6. `tests/ExifRemover.Tests/ExifRemover.Tests.csproj` (xUnit, net8.0) with the test classes above and the in-memory `FixtureFactory` for JPEG/PNG fixtures.
+7. `install.cmd`, `uninstall.cmd`.
+8. `README.md` with usage, install/uninstall, and the privacy/security note that this tool never uploads, never phones home, runs 100% offline.
+9. Verified build (`dotnet build -c Release` succeeds) and verified test pass (`dotnet test` passes, 51/51) on Windows 11.
 
 ---
 

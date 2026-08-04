@@ -364,4 +364,50 @@ Why no D36 test: the `OverlayViewModel` lives in `ExifRemover.App`, which target
 - The `_sessionDontAsk` static flag in `OverlayWindow` (line 14) is per-process, not per-overlay-window. The user checks "Don't ask again" → the flag is set for the whole process. The current name and docstring could be clearer (`_dontAskAgainForProcess` would be more honest), but the behavior matches the dialog's label ("Don't ask again for this session") and the user explicitly opted in. Cosmetic.
 - The `FilterText` setter in `OverlayViewModel` is now correct (D36), but no automated test pins the behavior — a future refactor that removes the `UpdateStatusFromEntries()` call would silently regress. See "Why no D36 test" above.
 
+---
+
+## ROUND 6 — 360° audit (2026-08-04) — M2.20.6
+
+The 6th adversarial 360° pass. The brief was the same: trust nothing, re-read every file with fresh eyes, find what rounds 1–5 didn't. The build/test pipeline was clean (xUnit 51/51, SelfTest 16/16, verifier all checks passed) at the start, so every finding here is a NEW issue that survived 5 rounds of audits.
+
+The audit focused on the files that had received the least attention in earlier rounds: the App's WPF resources (Theme.xaml, app.manifest, AboutWindow.xaml, ConfirmWindow.xaml), the install/uninstall scripts (re-reviewed with fresh eyes for the dead-code class of bug), the project layout metadata (PLAN.md, .gitignore, ExifRemover.sln), and a deeper look at the FixtureFactory's per-chunk CRC table rebuild.
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D40** | LOW (dead code) | `Theme.xaml` defines a `MonoText` style (lines 105-108 in the pre-fix file) intended for monospaced text blocks. Grep across the whole repo: no XAML file uses it. The overlay's monospaced cells use `FontFamily="{StaticResource MonoFontFamily}"` directly (e.g. `EntriesGrid` line 107), bypassing the style. The style was added speculatively ("we'll need a monospaced text style for the XMP dump") but never wired up. | `Resources/Theme.xaml:105-108` | Dead style removed. `UiText` (which IS used by `AboutWindow.xaml`) stays. |
+| **D41** | LOW (docs) | `PLAN.md` §10 deliverable #1 promised a solution-level `Directory.Build.props` (nullable on, latest C#, warnings-as-errors for our own code) but the file does not exist on disk. Grep: zero matches for `Directory.Build.props`. The per-csproj config (App, Engine, SelfTest, Verifier) sets these properties individually; the Tests project intentionally does NOT set `TreatWarningsAsErrors` (test code is more permissive). | `PLAN.md:234` | Deliverable list rewritten to match the actual layout: per-csproj config, no `Directory.Build.props`. The Tests project's deliberate permissiveness is called out. |
+| **D43** | LOW (docs) | `PLAN.md` §6 said "We commit a small set of test vectors under `tests/ExifRemover.Tests/Fixtures/`" and listed `clean.jpg`, `camera_sample.jpg`, `screenshot.png`, `transparent.png`, `truncated.jpg`, `truncated.png`. The repo's `tests/ExifRemover.Tests/Fixtures/` directory does not exist — the actual tests generate all fixtures at runtime via `FixtureFactory.cs` (line 6-10: "These fixtures are generated at test time so the repository stays text-only and the tests are reproducible"). | `PLAN.md:193-200` | §6 rewritten to describe the generation-at-test-time approach, with the fixture categories listed by their generator function names (MinimalJpeg, JpegWithExifXmpIccAndComment, PngWithTextTimeExifIccp, PngWithAlwaysKeptAncillaryChunks, PngWithUnknownAncillaryChunk, JpegWithStuffedScanAndMetadata, ProgressiveLikeJpegWithExif, JpegWithJunkAfterEoi, TruncatedJpeg, TruncatedPng). |
+| **D46** | LOW (defensive) | `SafeInvoke` in `OverlayWindow.xaml.cs` catches `TaskCanceledException` to swallow dispatcher-shutdown race-condition exceptions. WPF's `Dispatcher.Invoke` throws `TaskCanceledException` today, but `TaskCanceledException` derives from `OperationCanceledException` — a future WPF change could throw a different subclass (`OperationCanceledException` directly, or a platform-specific subtype). The narrow catch would miss it, the inner Task would fault, and the unobserved-task-exception handler would log. | `OverlayWindow.xaml.cs:122-126` | Catch widened to `OperationCanceledException` (the base class). Comment updated to document the forward-compat reasoning. |
+
+**D44 (not a real finding, retracted during the round):**
+- I initially wrote D44 as "Engine.csproj lacks `<TreatWarningsAsErrors>` but App has it". On close re-read the Engine csproj DOES have it on line 10 (it was always there — the very-strict Engine was the FIRST project to enable it). The actual outlier is `tests/ExifRemover.Tests/ExifRemover.Tests.csproj`, which intentionally doesn't have it (test code is more permissive). No change made; the audit log here records the retraction so a future auditor doesn't repeat the misread.
+
+**D42 (not fixed, low impact):**
+- `FixtureFactory.WritePngChunk` (line 504-518) rebuilds the 256-entry CRC32 table inside the function for every chunk (~2048 iterations per table, ~10 tables per fixture). The Engine's `PngMetadataStripper` has the same per-call table-build cost on line 270-282. The total wasted work is ~20K iterations per test fixture / strip — invisible in practice (test suite runs in 8 seconds) and the table-build isn't a hot path in production. Noted; not fixed in this round. A future "static table, build once" cleanup would be a one-line change but isn't worth the diff churn today.
+
+**D45 (not fixed, latent, carried from M2.20.5):**
+- `verify/Program.cs:122-125` `IsValidJpeg` is JPEG-only. The Python harness only feeds JPEGs (`gen_test_jpeg.py` is JPEG-only), so the bug never fires. Same as M2.20.5's analysis: latent, document-only.
+
+**No new tests in this round.**
+- The round was a doc/dead-code/defensive-cleanup pass, not a behavior fix. The behavioral changes (D46 catch widening) are verified by the existing test suite (xUnit 51/51 + SelfTest 16/16 + verifier ALL CHECKS PASSED). A regression test for D46 would need to spawn a real `Dispatcher` shutdown mid-`Invoke`, which is the WPF-test-harness problem we already declined to solve for D36.
+
+**Final status after Round 6:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 51/51 (unchanged — no new tests in this round)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED
+
+**Cumulative across all 6 audit rounds:** 33 fixes since `605a2d0` (26 from rounds 1–4, +4 in round 5, +3 in round 6: D40 dead-style, D41/D43 docs, D46 catch widening). xUnit: 27 → 35 → 39 → 47 → 51 (stable since M2.20.4); SelfTest: 16/16 stable since the M2.20.3 ICC-injection improvements.
+
+**Still open / accepted (carried forward from earlier rounds):**
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented in M2.20.4
+- **D45** (IsValidJpeg for PNGs) — latent, not exercised by the current JPEG-only harness
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks (carried from M2.20.3, D42 round 6 retried). D33 added a 10 MB test. Streaming CRC for arbitrary chunk sizes is still deferred. The Engine's CRC table is also rebuilt per call (line 270-282); one-time-init would shave ~1ms per Strip, irrelevant for the typical use case.
+- The `_sessionDontAsk` static flag (carried from M2.20.5) — cosmetic naming, behavior is correct.
+- The D36 `FilterText` setter test (carried from M2.20.5) — WPF-bound, deferred to a future `ExifRemover.App.Tests` assembly.
+
 

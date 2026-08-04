@@ -106,11 +106,12 @@ public partial class OverlayWindow : Window
     /// <summary>
     /// D15: invoke <paramref name="action"/> on the UI thread, but only if the dispatcher
     /// is still alive. If the window has been closed (the user clicked X, or the app is
-    /// shutting down), <c>Dispatcher.Invoke</c> throws <c>TaskCanceledException</c> and
-    /// the inner <see cref="Task"/> faults — producing an unobserved-task-exception log
-    /// entry and, with the wrong runtime config, a process crash. None of the post-strip
-    /// UI updates are essential (the file is already written; the user has already left),
-    /// so the safe behaviour is to no-op when the window is going away.
+    /// shutting down), <c>Dispatcher.Invoke</c> throws an <c>OperationCanceledException</c>
+    /// (specifically <c>TaskCanceledException</c> today) and the inner <see cref="Task"/>
+    /// faults — producing an unobserved-task-exception log entry and, with the wrong
+    /// runtime config, a process crash. None of the post-strip UI updates are essential
+    /// (the file is already written; the user has already left), so the safe behaviour
+    /// is to no-op when the window is going away.
     /// </summary>
     private void SafeInvoke(Action action)
     {
@@ -119,10 +120,13 @@ public partial class OverlayWindow : Window
         {
             Dispatcher.Invoke(action);
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
-            // Dispatcher shut down between the HasShutdownStarted check and the Invoke.
-            // Same as the above: the UI is going away, the file is already on disk.
+            // D46: catch the base class, not just TaskCanceledException. WPF's
+            // Dispatcher.Invoke currently throws TaskCanceledException (which derives
+            // from OperationCanceledException), but a future WPF version could throw
+            // a different subclass. Catching the base class is forward-compatible and
+            // still lets genuinely-unexpected exceptions propagate.
         }
     }
 

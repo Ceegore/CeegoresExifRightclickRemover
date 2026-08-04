@@ -102,11 +102,6 @@
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
-    <Style TargetType="TextBlock" x:Key="MonoText">
-        <Setter Property="FontFamily" Value="{StaticResource MonoFontFamily}" />
-        <Setter Property="FontSize" Value="{StaticResource UiFontSizeSmall}" />
-    </Style>
-
     <Style TargetType="TextBox">
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
