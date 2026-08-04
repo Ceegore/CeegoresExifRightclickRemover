@@ -32,18 +32,4 @@ internal static class AtomicFile
 
         return Path.Combine(dir, $"{name}_{Guid.NewGuid():N}{ext}");
     }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch
-        {
-        }
-    }
 }
