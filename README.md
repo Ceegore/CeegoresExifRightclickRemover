@@ -123,6 +123,6 @@ This build does not include a signing script. If you have your own code-signing 
 
 ## License
 
-ExifRemover source code: AGPL-3.0-or-later (see `LICENSE`).
+ExifRemover source code: MIT License (see `LICENSE`).
 
 MetadataExtractor (third-party dependency): Apache License 2.0 (see `THIRD_PARTY_NOTICES.md`).
