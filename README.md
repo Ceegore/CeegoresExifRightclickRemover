@@ -14,8 +14,8 @@ Multi-select is supported: right-click several images, choose the menu entry onc
 
 ## Installation
 
-1. Download the latest release zip from the [Releases page](#).
-2. Extract it anywhere you like (e.g. `C:\Tools\ExifRemover\`).
+1. Build from source (this project does not yet publish binary releases — see [Building from source](#building-from-source) below). The build output IS the installable folder.
+2. The freshly built `ExifRemover.exe` + sibling runtime DLLs land in `<repo>\bin\Release\net8.0-windows\`. You can either install from there or move the whole `bin\Release\net8.0-windows\` folder to a stable location (e.g. `C:\Tools\ExifRemover\`).
 3. Open a terminal (`cmd.exe` or PowerShell) **in that folder** and run the installer. Note the leading `.\` — Windows does not search the current directory for executables by default:
    ```
    .\install.cmd

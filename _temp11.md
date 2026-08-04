@@ -526,4 +526,43 @@ The 9th adversarial 360° pass. The build/test pipeline was clean (xUnit 51/51, 
 - The "last strip removed all" message in `OverlayViewModel.UpdateStatusFromEntries` — minor copy issue when filter is active.
 - The `ExifRemover.exe` / `*.dll` artifacts in the repo root (carried from M2.20.7) — all gitignored, cosmetic.
 
+---
+
+## ROUND 10 — 360° audit (2026-08-04) — M2.20.10
+
+The 10th adversarial 360° pass. The build/test pipeline was clean (xUnit 61/61, SelfTest 16/16, verifier all checks passed) at the start. The audit's focus this round was **documentation drift** — after 9 rounds of bug-hunting + test-filling, the bug surface and test surface are tight, but `PLAN.md` and `README.md` had accumulated plan-vs-reality gaps that the earlier "doc-drift" rounds (M2.20.6 D41/D43) hadn't yet caught.
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D58** | LOW (docs) | `PLAN.md` §7 claimed "A `sign.cmd` template is included: if the user supplies a code-signing cert path in `SIGN_CERT` and `SIGN_PASSWORD` env vars, `sign.cmd` will sign the produced exe with `signtool`." No `sign.cmd` exists in the repo. Grep: zero matches. The plan was written when the project was first being designed and the author considered shipping a sign template, but the actual decision (per the next bullet "We never bundle a third-party signing service") is that signing is an opt-in user action with the user's own cert + `signtool`, not a project responsibility. | `PLAN.md:227` (the deleted "sign.cmd" bullet) | Bullet rewritten to make the opt-in nature explicit ("A user who wants to sign their own build can do so with their own `signtool` invocation — no `sign.cmd` template is shipped"). No code change; this is a doc-vs-reality correction. |
+| **D59** | LOW (UX, docs) | `README.md` line 17 said "Download the latest release zip from the [Releases page](#)." The `[Releases page](#)` is a self-anchor (a placeholder for a real URL). The project has never published a binary release. The reader who follows step 1 finds an empty target. The actual install path is "build from source, then run `.\install.cmd` from the build output directory" — exactly what §"Building from source" already documents. The two sections were inconsistent: §"Installation" assumed a release zip exists, §"Building from source" explained the actual workflow. | `README.md:17-19` | §"Installation" rewritten to point at the build-from-source path as step 1. The placeholder is gone; the user's actual first step is now correct. |
+
+**No behavioral changes; no new tests; no source-code fixes.**
+
+This round was a pure doc-drift pass — the third such round (after M2.20.6 D41/D43 and now M2.20.10 D58/D59). The pattern is recurring: the original `PLAN.md` was written when the project was being designed and made promises about file structure (Directory.Build.props, committed Fixtures/, sign.cmd) that were never realized as the implementation evolved. The doc surface is now tightened to match reality.
+
+**Final status after Round 10:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 61/61 (unchanged)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED
+
+**Cumulative across all 10 audit rounds:** 40 fixes + 10 new tests since `605a2d0` (26 + 24 from rounds 1–4, +4 in round 5, +3 in round 6, +4 in round 7, +2 in round 8, +1 + 10 tests in round 9, +0 + 0 tests in round 10 — round 10 is the first round with zero source-code or test changes, just doc corrections). xUnit: 27 → 35 → 39 → 47 → 51 → 61 (stable since M2.20.9); SelfTest: 16/16 stable.
+
+**Still open / accepted (carried forward from earlier rounds):**
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented in M2.20.4
+- **D45** (IsValidJpeg for PNGs) — latent, not exercised by the current JPEG-only harness
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks (carried from M2.20.3, D42 round 6 retried). D33 added a 10 MB test.
+- The Engine's CRC table is rebuilt per call (line 270-282); one-time-init would shave ~1ms per Strip, irrelevant for the typical use case.
+- The `_sessionDontAsk` static flag (carried from M2.20.5) — cosmetic naming.
+- The D36 `FilterText` setter test (carried from M2.20.5) — WPF-bound, deferred to a future `ExifRemover.App.Tests` assembly.
+- The `Formatting.FormatBytes` helper in `src/ExifRemover.App/Formatting.cs` — would need a separate WPF-aware test assembly to unit-test directly. Not worth the cost.
+- The "last strip removed all" message in `OverlayViewModel.UpdateStatusFromEntries` — minor copy issue when filter is active.
+- The `ExifRemover.exe` / `*.dll` artifacts in the repo root (carried from M2.20.7) — all gitignored, cosmetic.
+- The `.gitignore` entry `XamlBuild*.dll` (line 58) is redundant with the catch-all `*.dll` (line 32). Not a bug, just an over-specified pattern. Cosmetic.
+
 
