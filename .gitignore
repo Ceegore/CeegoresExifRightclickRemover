@@ -66,6 +66,7 @@ D3DCompiler*.dll
 # --- Tool config / agent scratch ----------------------------
 .claude/
 .mavis/
+tools/_ci_run/
 *.tmp
 *.bak
 *_old.*
