@@ -5,6 +5,31 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.19 — 2026-08-05 — 360° audit round 16
+- **D70** `install.cmd` `:do_build` subroutine silently swallowed
+  `del` / `move` / `rmdir` failures via the `>nul 2>&1` family of
+  error-suppression patterns (same anti-pattern M2.20.17 D68 fixed
+  for `reg add`). If the previous `ExifRemover.exe` was running, or
+  any sibling DLL was locked by an AV scan / indexer / other process,
+  the build would silently fail to update the output, and the user
+  would then run the OLD `ExifRemover.exe` with no idea the new
+  build never landed. The script's final `echo Build complete.` was
+  unconditional. A second anti-pattern — `dir ... | findstr /v "File"`
+  — actively hid the `File Not Found` text that `dir` prints when no
+  files matched, so even a totally-failed publish would not surface
+  the missing exe. Fix: errorlevel checks after every `del` / `move`
+  / `rmdir` step with actionable error messages, plus a final
+  `if not exist ExifRemover.exe` sanity check that prints a clear
+  "Build did not produce ExifRemover.exe" error. The
+  `findstr /v "File"` hack is removed. Also improved the
+  `:RegAdd` error message from M2.20.17 D68: removed the misleading
+  "Re-run with admin rights" hint (ExifRemover registers per-user
+  in HKCU; admin rights are not required, and the actual cause of a
+  failed reg add is almost always AV / indexer / process lock).
+- 0 source-code changes; 0 new tests (D70 is a `.cmd` script fix,
+  manually verified by locking ExifRemover.exe and watching the new
+  error message + `errorlevel 1` exit).
+
 ## M2.20.18 — 2026-08-04 — 360° audit round 15
 - **D69** `src/ExifRemover.Engine/MetadataInspector.cs:PngChunkProbe` —
   the PNG `hIST` chunk (palette histogram) was silently invisible to the
