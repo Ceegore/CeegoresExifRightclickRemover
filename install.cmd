@@ -142,6 +142,11 @@ REM ============================================================
 REM Internal: reg add wrapper that aborts the install on any failure.
 REM Usage: call :RegAdd "<key>" [/v <name>] [/d <data>] [/f ...]
 REM Replaces the silent-swallow pattern `reg add ... >nul 2>&1`.
+REM
+REM Note: ExifRemover registers per-user (HKCU) — no admin rights are
+REM required. A failed reg add is almost always AV interference, a
+REM running indexer, or another process holding the key. The error
+REM message reflects that.
 REM ============================================================
 :RegAdd
 reg add %* >nul
@@ -150,7 +155,9 @@ if errorlevel 1 (
     echo ERROR: reg add failed for: %1
     reg add %*
     echo.
-    echo Aborting install. Re-run with admin rights if the registry is locked.
+    echo Aborting install. A failed reg add is usually caused by antivirus
+    echo interference, a Windows Search indexer, or another process holding
+    echo the registry key. Re-run after the lock is released.
     exit /b 1
 )
 exit /b 0
@@ -191,13 +198,57 @@ if errorlevel 1 (
 )
 
 REM Move the build output next to install.cmd.
-if exist "%ROOT%\ExifRemover.exe" del /q "%ROOT%\ExifRemover.exe"
-for %%F in ("%STAGE%\*") do move /y "%%F" "%ROOT%\" >nul
+REM D70 (M2.20.19): the del/move/rmdir steps previously had no errorlevel checks.
+REM If the user was running the previous ExifRemover.exe (or any sibling DLL
+REM is locked by an AV scan / indexer / another process), the del would
+REM fail, the move would partially complete, and the script would print
+REM "Build complete" with a partial output. The user then ran the OLD exe
+REM with no idea. Fix: errorlevel checks at every step + a final
+REM existence check on ExifRemover.exe. The `findstr /v "File"` hack that
+REM hid the "File Not Found" dir message is also removed — if the exe is
+REM missing, the user needs to see it.
+if exist "%ROOT%\ExifRemover.exe" (
+    del /q "%ROOT%\ExifRemover.exe"
+    if errorlevel 1 (
+        echo.
+        echo ERROR: Could not delete the previous ExifRemover.exe.
+        echo It may be in use (close ExifRemover if it's running) or
+        echo locked by an antivirus scan. Re-run after the lock is released.
+        rmdir /s /q "%STAGE%" 2>nul
+        exit /b 1
+    )
+)
+for %%F in ("%STAGE%\*") do (
+    move /y "%%F" "%ROOT%\" >nul
+    if errorlevel 1 (
+        echo.
+        echo ERROR: Could not move file: %%F
+        echo A file in the target folder may be locked (AV / indexer / running
+        echo process). Re-run after the lock is released.
+        rmdir /s /q "%STAGE%" 2>nul
+        exit /b 1
+    )
+)
 rmdir /s /q "%STAGE%"
+if errorlevel 1 (
+    echo.
+    echo ERROR: Could not delete the staging folder. Stale files may remain.
+    exit /b 1
+)
+
+REM Final sanity check: the build output must contain ExifRemover.exe.
+REM If it's not there, the build silently failed somewhere and the user
+REM needs to know. The pre-fix dir|findstr hack hid this exact case.
+if not exist "%ROOT%\ExifRemover.exe" (
+    echo.
+    echo ERROR: Build did not produce ExifRemover.exe in %ROOT%.
+    echo Check the publish output above for errors.
+    exit /b 1
+)
 
 echo.
 echo === Build complete: %EXE% ===
-dir /b "%ROOT%\ExifRemover.exe" "%ROOT%\*.dll" 2>nul | findstr /v "^$" | findstr /v "File"
+dir /b "%ROOT%\ExifRemover.exe" "%ROOT%\*.dll"
 echo.
 exit /b 0
 
