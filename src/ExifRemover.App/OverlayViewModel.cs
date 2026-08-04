@@ -178,6 +178,16 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             EntriesView.Refresh();
             OnPropertyChanged(nameof(VisibleEntryCount));
+            // D36: VisibleEntryCount is the value the StatusText string contains
+            // ("{VisibleEntryCount} of {total} entries shown"). The filter changes
+            // the visible count but the bound StatusText string is only re-composed
+            // by UpdateStatusFromEntries — which is called from RebuildCurrentEntries
+            // and RunRemove but NOT from the filter path. Without this call the user
+            // types a filter, the grid re-renders to 3 rows, but the status strip
+            // still reads "5 of 5 entries shown" (the last pre-filter count). The
+            // Setter here reuses the same status-format logic so the two views
+            // (grid and status) agree at every keystroke.
+            UpdateStatusFromEntries();
         }
     }
 

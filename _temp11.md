@@ -325,4 +325,43 @@ The 4th adversarial 360° pass. The brief was the same as before: trust nothing,
 - `PngMetadataStripper` allocates `byte[length]` for kept chunks. The D33 test now covers a 10 MB IDAT (well above the typical "few hundred KB" and well below the 256 MB cap), which pins the contract. Streaming CRC for arbitrary chunk sizes is still deferred.
 - The clipboard access in `CopyValue_Click` / `CopyRow_Click` is now wrapped in try/catch (M2.20.3 D13). D15 (this round) is the analogous fix for the dispatcher-shutdown failure mode.
 
+---
+
+## ROUND 5 — 360° audit (2026-08-04) — M2.20.5
+
+The 5th adversarial 360° pass. The brief was the same: trust nothing, re-read every file with fresh eyes, find what rounds 1–4 didn't. The build/test pipeline was clean (xUnit 51/51, SelfTest 16/16, verifier all checks passed) at the start, so every finding here is a NEW issue that survived 4 rounds of audits.
+
+The audit focused on the files that got the least attention in earlier rounds: the App's WPF code paths (OverlayViewModel, OverlayWindow), the install/uninstall scripts, the verifier, and the small WPF utility files (BoolToVisibilityConverter, ConfirmWindow, AboutWindow) that were barely skimmed in M2.20.4.
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D36** | MEDIUM | `OverlayViewModel.FilterText` setter updates `EntriesView` and `VisibleEntryCount`, but it does NOT update `StatusText`. The bound `StatusText` string ("5 of 10 entries shown") is only re-composed by `UpdateStatusFromEntries`, which is called from `RebuildCurrentEntries` and `RunRemove` — neither of which is on the filter path. The result: the user types a filter, the grid re-renders to 3 rows, but the status strip still reads "5 of 10 entries shown" (the last pre-filter count). Two views disagree about the same value. Observable manually with any image that has ≥ 2 entries. | `OverlayViewModel.cs:170-182` (was: refresh + VisibleEntryCount only) | Setter now also calls `UpdateStatusFromEntries()` after the refresh, so the bound string is re-composed on every keystroke. The reuse of the same `UpdateStatusFromEntries` helper means the filter path uses the same format as every other status update (no risk of "filter shows '3 of 5'" but a future code path shows "5 of 5" with a slightly different format). |
+| **D37** | MEDIUM (dead code with latent bug) | `verify/StripperLib.cs` is not referenced anywhere — the verifier's `Program.cs` calls `StripPipeline.Strip` directly, not `StripperLib.Strip`. Grep across the whole repo: only one match (the file itself). The dead code also has a real bug: it calls `Path.GetTempFileName()` (which creates a 0-byte file), passes the temp paths to `StripPipeline.Strip`, then reads back from the temp path — but the stripper with `overwriteSource=false` calls `NextNonClashingPath`, which finds the existing 0-byte temp file and writes to a sibling (`{name} (2).tmp`). The byte array returned is the unread 0-byte stub, not the actual stripped output. Today no one calls `StripperLib`, so the bug never fires — but a future caller would get silent 0-byte output. | `verify/StripperLib.cs` (whole file) | Deleted. The verifier used `StripPipeline.Strip` directly and gets the real `result.OutputPath` from the returned `StripResult`; no functionality is lost. |
+| **D38** | LOW (dead code) | `install.cmd` lines 110-111 set `CMD_EXE="\"%EXE%\""` and `CMD_PCT="\"%%1\""` but never use them. The actual `reg add` on line 115 inlines the same values. Vestigial leftovers from an earlier refactor (the variables look like they were going to be reused in a loop, but the loop was inlined instead). | `install.cmd:110-111` | Dead assignments removed. No behavior change. |
+| **D39** | LOW (dead code) | `PngMetadataStripper.Strip` has an `if (sawIend) break;` inside the `if (drop)` block (lines 80-83 in the pre-fix file). The branch is unreachable: IEND is forced to `drop = false` on line 70 (it's never dropped, the loop terminates at the IEND "kept" path on the next iteration). The dead branch is the result of a copy-paste from the "kept" path's `if (sawIend) break;` (which IS reached). | `PngMetadataStripper.cs:73-85` | Dead `if (sawIend) break;` inside the drop branch removed. The kept-path `if (sawIend) break;` remains (it's the actual loop terminator). |
+| **L1** | LOW (docs) | The `All metadata` row in the README's profile table (line 71) had `Strips: "EXIF, IPTC, XMP, ICC profile, JPEG COM, …; PLUS PNG color-management chunks (gAMA, cHRM, sRGB)"`. The "plus" is misleading: ICC profile is already in the Privacy strips, not added by AllMetadata. The only chunks actually new in AllMetadata are the PNG color-management ones (`gAMA`/`cHRM`/`sRGB`). A user reading "plus ICC" could wrongly conclude that AllMetadata adds ICC on top of Privacy, when in fact ICC is dropped identically in both. | `README.md:71` | Cell rewritten: "Same as Privacy, plus the PNG color-management chunks (gAMA, cHRM, sRGB). ICC profile is also dropped (it was already dropped under Privacy; the only new chunks are the PNG color-management ones)." |
+
+**No new tests added in this round.**
+
+Why no D36 test: the `OverlayViewModel` lives in `ExifRemover.App`, which targets `net8.0-windows` and depends on WPF (`Dispatcher`, `ObservableCollection`, `ICollectionView`). The existing `tests/ExifRemover.Tests` project targets `net8.0` (no WPF) — it was kept cross-platform for the headless test pipeline. I tried changing the Tests target framework to `net8.0-windows` with `<UseWPF>true</UseWPF>` and embedding `OverlayViewModel.cs` via `<Compile Include>`, but the embedded Engine sources stop compiling because `Stream`/`File`/`Path` (used without an explicit `using System.IO;` in the Engine) are not in the implicit usings for `net8.0-windows + UseWPF`. Adding `using System.IO;` to 4 Engine files is invasive and would require the same patch in the Verifier and SelfTest csprojs' `<Compile Include>` lists — not worth it for one UI consistency test. The fix itself is small (one line, `UpdateStatusFromEntries()` at the end of the FilterText setter) and the bug is observable in 10 seconds with any multi-entry JPEG. A STA-collected VM test in a future round (separate `ExifRemover.App.Tests` assembly targeting `net8.0-windows`) would be the right place for it.
+
+**Final status after Round 5:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 51/51 (unchanged — no new tests in this round, by design)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED
+
+**Cumulative across all 5 audit rounds:** 30 fixes since `605a2d0` (26 from rounds 1–4, +4 in round 5). xUnit: 27 → 35 → 39 → 47 → 51 (stable since M2.20.4); SelfTest: 16/16 stable since the M2.20.3 ICC-injection improvements.
+
+**Still open / accepted (carried forward from M2.20.4):**
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented in M2.20.4
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks (carried from M2.20.3). D33 added a 10 MB test. Streaming CRC for arbitrary chunk sizes is still deferred.
+- `verify/Program.cs:122-125` `IsValidJpeg` only checks for JPEG structure. The Python harness only feeds JPEGs (`gen_test_jpeg.py` produces JPEGs), so the bug never fires today — but a future PNG verifier would always report `output_decodes=no`. Latent, not fixed in this round.
+- The `_sessionDontAsk` static flag in `OverlayWindow` (line 14) is per-process, not per-overlay-window. The user checks "Don't ask again" → the flag is set for the whole process. The current name and docstring could be clearer (`_dontAskAgainForProcess` would be more honest), but the behavior matches the dialog's label ("Don't ask again for this session") and the user explicitly opted in. Cosmetic.
+- The `FilterText` setter in `OverlayViewModel` is now correct (D36), but no automated test pins the behavior — a future refactor that removes the `UpdateStatusFromEntries()` call would silently regress. See "Why no D36 test" above.
+
 

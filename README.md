@@ -68,7 +68,7 @@ The overlay has a dropdown offering three presets. Each row in the metadata grid
 | Profile | Strips | Keeps |
 |---|---|---|
 | **Privacy** (default) | EXIF (IFD0, SubIFD, GPS, Interop, Thumbnail), IPTC, XMP, **ICC profile**, JPEG COM, PNG `tEXt`/`zTXt`/`iTXt`/`tIME`/`eXIf`/`iCCP` | JPEG JFIF header; PNG `gAMA`, `cHRM`, `sRGB`, `bKGD`, `sBIT`, `pHYs`, `tRNS` (color management & print dimensions, so colors don't shift) |
-| **All metadata** | EXIF, IPTC, XMP, **ICC profile**, JPEG COM, PNG `tEXt`/`zTXt`/`iTXt`/`tIME`/`eXIf`/`iCCP`; **plus** PNG color-management chunks (`gAMA`, `cHRM`, `sRGB`) | JPEG JFIF; PNG `pHYs` (physical dimensions) |
+| **All metadata** | Same as Privacy, plus the PNG color-management chunks (`gAMA`, `cHRM`, `sRGB`). ICC profile is also dropped (it was already dropped under Privacy; the only new chunks are the PNG color-management ones). | JPEG JFIF; PNG `pHYs` (physical dimensions) |
 | **Minimal** | Only EXIF, IPTC, XMP, JPEG COM, PNG `tEXt`/`zTXt`/`iTXt`/`tIME`/`eXIf` | **ICC profile** and color-management chunks are kept (so device fingerprint data may remain) |
 
 The **Overwrite source** checkbox in the overlay footer controls where the stripped file is written:

@@ -74,13 +74,11 @@ public static class PngMetadataStripper
                     {
                         // Skip the chunk data and 4-byte CRC trailer without allocating
                         // a buffer for the payload — the chunk is being dropped, not rewritten,
-                        // so we never need its contents in memory.
+                        // so we never need its contents in memory. IEND cannot reach this
+                        // branch (it's forced to drop = false above), so the loop naturally
+                        // terminates at IEND via the "kept" path on the next iteration.
                         SkipExactly(input, length + 4);
                         dropped++;
-                        if (sawIend)
-                        {
-                            break;
-                        }
                         continue;
                     }
 

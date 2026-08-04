@@ -107,8 +107,6 @@ echo.
 
 REM (1) Application registration (Win 11 modern menu reads from Applications\<exe>\shell)
 echo Registering application shell verb ...
-set "CMD_EXE=\"%EXE%\""
-set "CMD_PCT=\"%%1\""
 reg add "HKCU\Software\Classes\Applications\ExifRemover.exe" /ve /d "ExifRemover" /f >nul
 reg add "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove" /ve /d "%VERB%" /f >nul
 reg add "HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove" /v "Icon" /d "%ICON%" /f >nul
