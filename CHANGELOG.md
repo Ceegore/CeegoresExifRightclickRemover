@@ -5,6 +5,36 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.16 — 2026-08-04 — 360° audit round 13
+- **D64** `README.md` §Installation step 2-3 contradicted §Building
+  from source: the old text told the user to `cd` into
+  `bin\Release\net8.0-windows\` and run `.\install.cmd` from there,
+  but `install.cmd` lives in the repo root and uses `%~dp0` to find
+  `ExifRemover.exe` in its own directory. The user following the old
+  instructions would land in a folder with no `install.cmd`. Section
+  rewritten to make the actual install path clear: the installable
+  folder is the repo root after `.\install.cmd build`, and any
+  relocation must move the whole folder (including the `.cmd` files).
+- **D65** `src/ExifRemover.Engine/JpegMetadataStripper.cs:SkipExactly`
+  was missing the trust-but-verify EOF check that the PNG stripper
+  already has (PngMetadataStripper.cs:231-234). A malformed JPEG whose
+  segment-length field claims more bytes than the file contains would
+  silently seek past EOF, then the next `ReadMarker` would throw a
+  less-informative "no marker" error. Fix: explicit `Position + count >
+  Length` check before the seek, matching the PNG version's pattern.
+  New test `Strip_App1SegmentTruncatedWithinPayload_…` pins the
+  improved error message and the "source untouched, no output file"
+  contract.
+- **D66** `.github/workflows/build.yml` — bumped the three
+  deprecated actions: `actions/checkout@v4` → `@v5`, `actions/setup-
+  dotnet@v4` → `@v5`, `actions/setup-python@v5` → `@v6`. The v4/v5
+  majors were deprecated to Node 20 (forced to run on Node 24);
+  the bumped majors target Node 24 natively and clear the cosmetic
+  deprecation warning that appeared in the previous CI runs.
+- xUnit: 61 → 62 tests (+1 for D65's truncated-APP1 case).
+
+## M2.20.15 — 2026-08-04 — 360° audit round 12
+
 ### Changed
 - Project license changed from AGPL-3.0-or-later to **MIT License** to align
   with the upstream public remote. See `LICENSE` for the full text and

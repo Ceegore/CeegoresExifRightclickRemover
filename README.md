@@ -14,23 +14,25 @@ Multi-select is supported: right-click several images, choose the menu entry onc
 
 ## Installation
 
-1. Build from source (this project does not yet publish binary releases — see [Building from source](#building-from-source) below). The build output IS the installable folder.
-2. The freshly built `ExifRemover.exe` + sibling runtime DLLs land in `<repo>\bin\Release\net8.0-windows\`. You can either install from there or move the whole `bin\Release\net8.0-windows\` folder to a stable location (e.g. `C:\Tools\ExifRemover\`).
-3. Open a terminal (`cmd.exe` or PowerShell) **in that folder** and run the installer. Note the leading `.\` — Windows does not search the current directory for executables by default:
+1. Build from source (this project does not yet publish binary releases — see [Building from source](#building-from-source) below). The `install.cmd` script moves the published `ExifRemover.exe` and its sibling runtime DLLs into the **repository root**, next to `install.cmd` itself — that folder is the installable folder.
+2. After `.\install.cmd build` completes, the repository root contains `ExifRemover.exe` + the .NET runtime DLLs + `install.cmd` + `uninstall.cmd`. Run the installer from there:
    ```
    .\install.cmd
    ```
    You should see:
    ```
    Installing ExifRemover context-menu entries for .jpg, .jpeg, and .png
-   Executable: C:\Tools\ExifRemover\ExifRemover.exe
+   Executable: D:\Projects\ExifRemover\ExifRemover.exe
    ...
    Done. Right-click any .jpg / .jpeg / .png file to see "Remove EXIF metadata".
    ```
-4. Right-click any `.jpg`, `.jpeg`, or `.png` file in File Explorer. You should see **Remove EXIF metadata** in the context menu. The entry is registered in three registry locations so it shows up in both the modern Win 11 default context menu and the legacy "Show more options" menu:
+   Note the leading `.\` — Windows does not search the current directory for executables by default, so `install.cmd` (without `.\`) fails with `CommandNotFoundException`.
+3. Right-click any `.jpg`, `.jpeg`, or `.png` file in File Explorer. You should see **Remove EXIF metadata** in the context menu. The entry is registered in three registry locations so it shows up in both the modern Win 11 default context menu and the legacy "Show more options" menu:
    - `HKCU\Software\Classes\Applications\ExifRemover.exe\shell\ExifRemove` — application shell verb (modern menu)
    - `HKCU\Software\Classes\SystemFileAssociations\image\shell\ExifRemove` — image-class entry (modern menu, covers all image types)
    - `HKCU\Software\Classes\SystemFileAssociations\.<ext>\shell\ExifRemove` per extension (legacy "Show more options" menu)
+
+If you want to move the installable folder to a stable location like `C:\Tools\ExifRemover\`, copy **the whole repo root** (including `install.cmd` and `uninstall.cmd` — they locate ExifRemover.exe in their own directory via `%~dp0`). The build output in `bin\Release\net8.0-windows\` is an intermediate artifact left by a plain `dotnet build`; the actual installer (`install.cmd`) expects everything to be in one folder.
 
 To uninstall:
 ```

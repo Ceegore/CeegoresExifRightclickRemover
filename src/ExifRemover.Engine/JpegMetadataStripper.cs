@@ -309,6 +309,14 @@ public static class JpegMetadataStripper
     {
         if (s.CanSeek)
         {
+            // D65: trust-but-verify. A malformed JPEG whose segment-length field claims more
+            // bytes than remain would put Position past Length, which is illegal for the next
+            // read and surfaces as a less-informative "no marker" error. Catch it here with a
+            // accurate message — same pattern as the PNG stripper's SkipExactly.
+            if (s.Position + count > s.Length)
+            {
+                throw new EndOfStreamException("Unexpected end of JPEG stream during segment skip.");
+            }
             s.Seek(count, SeekOrigin.Current);
             return;
         }
