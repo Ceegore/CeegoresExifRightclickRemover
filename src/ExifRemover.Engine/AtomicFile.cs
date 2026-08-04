@@ -2,32 +2,13 @@ namespace ExifRemover.Engine;
 
 internal static class AtomicFile
 {
-    public static void Replace(string destination, string tempContent, Action<string> writeContent)
-    {
-        var dir = Path.GetDirectoryName(destination)
-                  ?? throw new ArgumentException("Destination has no directory.", nameof(destination));
-        var name = Path.GetFileName(destination);
-        var tempPath = Path.Combine(dir, $".{name}.exifremover-{Guid.NewGuid():N}.tmp");
-
-        try
-        {
-            writeContent(tempPath);
-            if (File.Exists(destination))
-            {
-                File.Replace(tempPath, destination, destinationBackupFileName: null, ignoreMetadataErrors: true);
-            }
-            else
-            {
-                File.Move(tempPath, destination);
-            }
-        }
-        catch
-        {
-            TryDelete(tempPath);
-            throw;
-        }
-    }
-
+    /// <summary>
+    /// Returns a path in the same directory as <paramref name="desiredPath"/> that does
+    /// not collide with any existing file. If the desired path is free, returns it
+    /// unchanged; otherwise tries "name (2).ext", "name (3).ext", … up to "name (9999).ext".
+    /// If all 9998 numbered slots are taken (vanishingly rare), falls back to
+    /// "name_{guid}.ext".
+    /// </summary>
     public static string NextNonClashingPath(string desiredPath)
     {
         if (!File.Exists(desiredPath))

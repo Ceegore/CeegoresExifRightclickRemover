@@ -491,4 +491,39 @@ The audit focused on the App's WPF code paths (OverlayViewModel's keep-set compu
 - The `UpdateStatusFromEntries` "last strip removed all" message (line 368) is technically accurate (the strip removed all the metadata) but could be reworded to "before last strip" if the user has filtered the grid (the message currently doesn't reflect the filter). Very minor copy issue.
 - The `app.manifest` DPI settings are now complete (Vista through Win11). The two DPI declarations (SMI/2005 "true/pm" and SMI/2016 "PerMonitorV2") are consistent (both per-monitor; V1 vs V2). No issue.
 
+---
+
+## ROUND 9 — 360° audit (2026-08-04) — M2.20.9
+
+The 9th adversarial 360° pass. The build/test pipeline was clean (xUnit 51/51, SelfTest 16/16, verifier all checks passed) at the start. The audit's focus this round was **test coverage** — after 8 rounds of bug-hunting the bug surface is getting tight, but the test surface has obvious gaps. Two untested critical helpers were found, one of which also had dead-code baggage.
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D56** | MEDIUM (dead code with API bug) | `AtomicFile.Replace(string destination, string tempContent, Action<string> writeContent)` was never called. Grep across the entire codebase: zero call sites. Both strippers (Jpeg, Png) call `File.Replace` directly in the `if (overwriteSource)` branch (line 106 / 125), not via `AtomicFile.Replace`. The method also had a buggy API: the `tempContent` parameter is unused — the function generates its own temp path with a `Guid.NewGuid()` and the `tempContent` parameter is just dead weight in the signature. The dead method is 26 lines (over half of `AtomicFile.cs`). | `src/ExifRemover.Engine/AtomicFile.cs:1-29` (was the `Replace` method) | Deleted the `Replace` method. `NextNonClashingPath` and `TryDelete` stay (the former is used by both strippers + `StripPipeline.BuildSiblingPath`; the latter is a private helper). |
+| **D53** | MEDIUM (test gap) | `AtomicFile.NextNonClashingPath` — the helper that produces "photo (2).jpg" when "photo.jpg" already exists — was not directly tested. Existing stripper tests exercise it indirectly (e.g. `Strip_InputPathEqualsOutputPath_OverwriteFalse_LeavesSourceIntact` triggers the sibling path), but no test pinned the helper's full contract: path-doesn't-exist returns the path, path-taken returns `name (2).ext`, multiple-taken increments, no-extension case, holes-in-sequence. | (new file) `tests/ExifRemover.Tests/AtomicFileTests.cs` | New test file with 5 cases: `NextNonClashingPath_DesiredFree_ReturnsDesiredPath`, `_DesiredTaken_ReturnsFirstSibling`, `_DesiredAndFirstSiblingTaken_ReturnsSecondSibling`, `_NoExtension_StillProducesSibling`, `_HolesInSequence_ReusesTheFirstHole`. |
+| **D57** | MEDIUM (test gap) | `StripProfileCatalog.Describe` — the function that produces the title / short description / long description for the overlay's profile dropdown — was not directly tested. The descriptions are also referenced by the README's profile table (L1 was a docs-vs-code wording bug; if a future drift happens, no test would catch it). The default-branch's `throw new ArgumentOutOfRangeException` was also untested. | (new file) `tests/ExifRemover.Tests/StripProfileTests.cs` | New test file with 5 cases: `Describe_Privacy_HasExpectedTitle`, `_AllMetadata_HasExpectedTitle`, `_Minimal_HasExpectedTitle`, `_LongDescription_AlwaysPopulated` (loops over all enum values, asserts non-empty), `_UnknownEnumValue_Throws` (pins the default-branch's throw contract). |
+
+**Final status after Round 9:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: **61/61** (was 51/51; **+10 new tests**)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED
+
+**Cumulative across all 9 audit rounds:** 40 fixes + 10 new tests since `605a2d0` (26 fixes + 24 tests from rounds 1–4, +4 fixes in round 5, +3 fixes in round 6, +4 fixes in round 7, +2 fixes in round 8, +1 fix + 10 tests in round 9). xUnit: 27 → 35 → 39 → 47 → 51 → **61**; SelfTest: 16/16 stable since the M2.20.3 ICC-injection improvements.
+
+**Still open / accepted (carried forward from earlier rounds):**
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented in M2.20.4
+- **D45** (IsValidJpeg for PNGs) — latent, not exercised by the current JPEG-only harness
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks (carried from M2.20.3, D42 round 6 retried). D33 added a 10 MB test.
+- The Engine's CRC table is rebuilt per call (line 270-282); one-time-init would shave ~1ms per Strip, irrelevant for the typical use case.
+- The `_sessionDontAsk` static flag (carried from M2.20.5) — cosmetic naming.
+- The D36 `FilterText` setter test (carried from M2.20.5) — WPF-bound, deferred to a future `ExifRemover.App.Tests` assembly.
+- The `Formatting.FormatBytes` helper in `src/ExifRemover.App/Formatting.cs` is now an `internal static class` — would need either a new `ExifRemover.App.Tests` assembly targeting `net8.0-windows` (the same blocker as D36) or making the class public + moving to a shared library. Not worth the cost for one helper.
+- The "last strip removed all" message in `OverlayViewModel.UpdateStatusFromEntries` — minor copy issue when filter is active.
+- The `ExifRemover.exe` / `*.dll` artifacts in the repo root (carried from M2.20.7) — all gitignored, cosmetic.
+
 
