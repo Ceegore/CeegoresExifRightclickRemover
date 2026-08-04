@@ -80,7 +80,7 @@ internal static class Program
                 File.WriteAllBytes(src, bytes);
                 try
                 {
-                    AssertThrowsAny<Exception>(() => JpegMetadataStripper.Strip(src, outPath, false, StripProfile.Privacy));
+                    AssertThrows<Exception>(() => JpegMetadataStripper.Strip(src, outPath, false, StripProfile.Privacy));
                     if (!bytes.SequenceEqual(File.ReadAllBytes(src)))
                         throw new Exception("Original bytes changed!");
                     if (File.Exists(outPath))
@@ -234,7 +234,7 @@ internal static class Program
                 File.WriteAllBytes(src, bytes);
                 try
                 {
-                    AssertThrowsAny<Exception>(() => PngMetadataStripper.Strip(src, outPath, false, StripProfile.Privacy));
+                    AssertThrows<Exception>(() => PngMetadataStripper.Strip(src, outPath, false, StripProfile.Privacy));
                     if (!bytes.SequenceEqual(File.ReadAllBytes(src)))
                         throw new Exception("Original bytes changed!");
                 }
@@ -282,7 +282,7 @@ internal static class Program
                 File.WriteAllText(txt, "not an image");
                 try
                 {
-                    AssertThrowsAny<Exception>(() => StripPipeline.Strip(txt, Path.Combine(Path.GetTempPath(), "er-bogus-out"), false, StripProfile.Privacy));
+                    AssertThrows<Exception>(() => StripPipeline.Strip(txt, Path.Combine(Path.GetTempPath(), "er-bogus-out"), false, StripProfile.Privacy));
                 }
                 finally { TryDelete(txt); }
             });
@@ -336,11 +336,6 @@ internal static class Program
             throw new Exception($"Expected {typeof(T).Name} but got {ex.GetType().Name}: {ex.Message}");
         }
         throw new Exception($"Expected {typeof(T).Name} but no exception was thrown.");
-    }
-
-    private static void AssertThrowsAny<T>(Action action) where T : Exception
-    {
-        AssertThrows<T>(action);
     }
 
     private static void AssertContains(FileInspection inspection, string group)

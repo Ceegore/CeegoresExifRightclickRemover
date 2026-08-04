@@ -78,6 +78,3 @@ desktop.ini
 # --- Local Python artifacts --------------------------------
 __pycache__/
 *.pyc
-verify_*.png
-verify_*.jpg
-gen_*.jpg

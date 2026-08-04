@@ -36,12 +36,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Fixtures\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="MetadataExtractor" Version="2.9.3" />
   </ItemGroup>
 

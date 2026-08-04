@@ -410,4 +410,44 @@ The audit focused on the files that had received the least attention in earlier 
 - The `_sessionDontAsk` static flag (carried from M2.20.5) — cosmetic naming, behavior is correct.
 - The D36 `FilterText` setter test (carried from M2.20.5) — WPF-bound, deferred to a future `ExifRemover.App.Tests` assembly.
 
+---
+
+## ROUND 7 — 360° audit (2026-08-04) — M2.20.7
+
+The 7th adversarial 360° pass. The brief was the same: trust nothing, re-read every file with fresh eyes, find what rounds 1–6 didn't. The build/test pipeline was clean (xUnit 51/51, SelfTest 16/16, verifier all checks passed) at the start, so every finding here is a NEW issue that survived 6 rounds of audits.
+
+The audit focused on the files that had received the least attention in earlier rounds: the SelfTest's `Program.cs` (the 16 test cases have been running green for 5 rounds but the helper functions had never been deeply reviewed), `gen_test_jpeg.py` (the Python harness for the verifier), `app.manifest` (re-read for missing `supportedOS` GUIDs), and the `.gitignore` (re-checked for dead patterns after D49 verification).
+
+| ID | Sev | What | Where | Fix |
+|---|---|---|---|---|
+| **D47** | LOW (misleading name + redundant alias) | `AssertThrowsAny<T>` in `SelfTest/Program.cs` was a one-line alias for `AssertThrows<T>` with no behavioral difference. The name suggests "catches any exception" (which is what `AssertThrows<Exception>` does, since every exception derives from `Exception`), but the generic parameter `T` is forwarded directly to `AssertThrows<T>` which strictly requires `T` or a subclass. The three call sites all passed `Exception` as `T`, which "works by accident" — `AssertThrows<Exception>` matches every exception. A future caller passing a specific `T` (e.g. `AssertThrowsAny<InvalidDataException>`) would get the strict behavior, not the "any" behavior the name advertises. | `src/ExifRemover.SelfTest/Program.cs:341-344` (was the alias), 3 call sites (lines 83, 237, 285) | Alias deleted; the 3 call sites now use `AssertThrows<Exception>` directly. The function `AssertThrows<T>` (which IS strict) is the single helper, with the call sites' choice of `T=Exception` being explicit. |
+| **D48** | LOW (manifest) | `app.manifest` listed supportedOS GUIDs for Windows Vista (`8e0f7a12-…`), 7 (`1f676c76-…`), 8 (`4a2f28e3-…`), 8.1 (`35138b9a-…`), and 10 (`e2011457-…`). The Windows 11 GUID (`e1b086e2-5834-4d6b-a0c5-321d5705261c`) was missing. The app still runs on Windows 11 (the exe is forward-compatible) but the manifest is missing the explicit "I am tested on Windows 11" hint that some Windows compatibility shims and telemetry check. | `src/ExifRemover.App/app.manifest:13-17` (was 5 GUIDs) | Added the Win11 GUID as the 6th entry, with a comment pointing at D48. |
+| **D49** | LOW (dead gitignore) | `.gitignore` had three patterns — `verify_*.png`, `verify_*.jpg`, `gen_*.jpg` — that don't match anything the Python scripts actually produce. The scripts use `tempfile.mkdtemp(prefix="er_inputs_")` and `tempfile.mkdtemp(prefix="er_verify_")` for working directories; the generated file names are `real_full.jpg`, `real_bare.jpg`, and the strip outputs `out.jpg` / `out (2).jpg`. None of those match `verify_*` or `gen_*` prefixes. The patterns are leftovers from an earlier version of the Python scripts that wrote to fixed names in the repo root. | `.gitignore:81-83` | Three patterns removed. `__pycache__/` and `*.pyc` (the actually-relevant Python patterns) stay. |
+| **D50** | LOW (dead csproj include) | `tests/ExifRemover.Tests/ExifRemover.Tests.csproj` had `<None Include="Fixtures\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>`. The `tests/ExifRemover.Tests/Fixtures/` directory does not exist (the tests generate all fixtures at runtime via `FixtureFactory.cs`). The glob matches nothing, the include is a no-op. The csproj also has `<NoWarn>` for `CS1591` and similar implicit include patterns that the build tolerates. | `tests/ExifRemover.Tests/ExifRemover.Tests.csproj:38-42` (was the empty `<None>` group) | Empty `<ItemGroup>` removed. The other ItemGroups (Engine `<Compile Include>` list, MetadataExtractor `<PackageReference>`) stay. |
+
+**No new tests in this round.**
+- All four findings are dead-code / dead-config (no behavioral change). The build pipeline + 51/51 + 16/16 + ALL CHECKS PASSED confirms the changes don't break anything that was working.
+
+**Final status after Round 7:**
+- Solution build: 0 errors, 0 warnings
+- xUnit: 51/51 (unchanged)
+- SelfTest: 16/16
+- Real-image verifier: ALL CHECKS PASSED
+
+**Cumulative across all 7 audit rounds:** 37 fixes since `605a2d0` (26 from rounds 1–4, +4 in round 5, +3 in round 6, +4 in round 7). xUnit: 27 → 35 → 39 → 47 → 51 (stable since M2.20.4); SelfTest: 16/16 stable since the M2.20.3 ICC-injection improvements.
+
+**Still open / accepted (carried forward from earlier rounds):**
+- **L5** (Win 11 modern context menu registration) — environment-dependent, can't be verified headless
+- **D35** (APP14 / CMYK color shift) — design limitation, documented in M2.20.4
+- **D45** (IsValidJpeg for PNGs) — latent, not exercised by the current JPEG-only harness
+- The v1 non-goals (WebP/TIFF/HEIC support, per-tag selection, drag-and-drop entry, localization, image preview) remain out of scope
+
+**New not-fixed observations (deferred):**
+- `PngMetadataStripper` allocates `byte[length]` for kept chunks (carried from M2.20.3, D42 round 6 retried). D33 added a 10 MB test.
+- The Engine's CRC table is rebuilt per call (line 270-282); one-time-init would shave ~1ms per Strip, irrelevant for the typical use case.
+- The `_sessionDontAsk` static flag (carried from M2.20.5) — cosmetic naming.
+- The D36 `FilterText` setter test (carried from M2.20.5) — WPF-bound, deferred to a future `ExifRemover.App.Tests` assembly.
+- The `gen_test_jpeg.py` "bare JPEG" fixture (line 95) writes a 32×32 image with constant color `(10, 20, 30)` — the entropy-coded scan is therefore very small. Not a bug (the bare fixture is meant to test the "no metadata" case, not the entropy-scan path), but if a future test wants to exercise the entropy scan on a metadata-free JPEG it would need pixel variation.
+- The `ExifRemover.exe` / `*.dll` / `hostfxr.dll` artifacts in the repo root are from a previous `install.cmd build` (timestamps 2026-05/06). They're all gitignored, but if a future commit accidentally lifts the gitignore the user could end up committing ~70 MB of .NET runtime DLLs. The catch-all `*.dll` / `*.exe` in `.gitignore` makes that hard, but not impossible. Cosmetic.
+
 

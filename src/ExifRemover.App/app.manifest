@@ -15,6 +15,11 @@
       <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" />
       <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" />
       <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}" />
+      <!-- D48: Windows 11 supportedOS GUID. Without it, Windows 11 still runs the app
+           (the exe is forward-compatible) but the manifest is missing the explicit
+           "I am tested on Windows 11" hint that some Windows compatibility shims
+           and telemetry check. The GUID is the official Microsoft-published value. -->
+      <supportedOS Id="{e1b086e2-5834-4d6b-a0c5-321d5705261c}" />
     </application>
   </compatibility>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
