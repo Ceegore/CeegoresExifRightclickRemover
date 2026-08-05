@@ -5,6 +5,33 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.41 — 2026-08-05 — 360° audit round 38 (extract PngSignature constant in ImageFormatDetector)
+- **D103** `src/ExifRemover.Engine/ImageFormat.cs` —
+  the format detector had the PNG signature (8 bytes:
+  `89 50 4E 47 0D 0A 1A 0A`) hardcoded as 8 inline byte
+  comparisons. Applied the D99/D100/D101 pattern:
+  extracted to a named `PngSignature` constant and
+  used `Slice(0, 8).SequenceEqual(PngSignature)`. The
+  `Slice(0, 8)` is critical: the pre-fix code only
+  checked the first 8 bytes (so a longer buffer like a
+  full PNG file would pass). A naive `SequenceEqual`
+  on the full header would falsely fail because the
+  extra bytes don't match the 8-byte signature. The
+  follow-up commit `8e52728` fixed the Slice issue
+  that the initial commit `dcde427` missed — caught by
+  the existing SelfTest "Static: format detection
+  works". The M2.20.37 D99 fix in the verifier had
+  the same potential issue but didn't catch it because
+  the verifier's test was a 8-byte byte[] (exactly the
+  signature length, no extra bytes to fail on).
+  2 new source-shape tests in
+  `tests/ExifRemover.Tests/ImageFormatShapeTests.cs`:
+  `PngSignature` constant present + used in
+  `Slice(0, 8).SequenceEqual(PngSignature)`; no inline
+  `header[N] == 0x89` byte comparisons.
+- xUnit: 176 → 178 tests (+2 for D103). SelfTest:
+  17/17 stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.40 — 2026-08-05 — 360° audit round 37 (move FormatBytes to Engine + add GB case + InvariantCulture + negative-value guard)
 - **D102** `src/ExifRemover.Engine/Formatting.cs` (new) +
   `src/ExifRemover.App/Formatting.cs` (now 1-line
