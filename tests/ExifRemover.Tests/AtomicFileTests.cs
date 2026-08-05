@@ -89,4 +89,52 @@ public class AtomicFileTests : IDisposable
         // "photo (3).jpg" (reuses the first hole, not the next-after-max).
         Assert.Equal(Path.Combine(_tempDir, "photo (3).jpg"), result);
     }
+
+    [Fact]
+    public void ResolveTempPath_PutsTempFileInSameDirectory()
+    {
+        // D83 (M2.20.25): the pre-fix code had a private ResolveTempPath in BOTH
+        // strippers. The two copies were byte-identical. After extraction to
+        // AtomicFile.ResolveTempPath, both strippers call the shared helper and
+        // the temp file lands in the same directory as the source. This test
+        // pins the contract: a JPEG source at dir/foo.jpg produces a temp path
+        // at dir/.<rest>.tmp, not at the process's CWD or at %TEMP%.
+        var source = Path.Combine(_tempDir, "photo.jpg");
+        var result = AtomicFile.ResolveTempPath(source);
+
+        // Same directory.
+        Assert.Equal(_tempDir, Path.GetDirectoryName(result));
+    }
+
+    [Fact]
+    public void ResolveTempPath_IncludesOriginalFilename()
+    {
+        // The temp file should embed the original filename so an orphaned temp
+        // file (e.g. after a process crash) is attributable to the source via
+        // the name alone — even if the .tmp extension is preserved and the file
+        // is hidden by the leading dot.
+        var source = Path.Combine(_tempDir, "myphoto.jpg");
+        var result = AtomicFile.ResolveTempPath(source);
+
+        // The leaf must contain the original filename.
+        var leaf = Path.GetFileName(result);
+        Assert.Contains("myphoto.jpg", leaf);
+        // And the .tmp extension must be present.
+        Assert.Equal(".tmp", Path.GetExtension(leaf));
+        // And the leading "." (hidden-file convention on Windows) must be present.
+        Assert.StartsWith(".", leaf);
+    }
+
+    [Fact]
+    public void ResolveTempPath_TwoCalls_ProduceDifferentPaths()
+    {
+        // The temp path includes a Guid, so two calls in quick succession must
+        // produce different paths — otherwise a back-to-back strip+overwrite
+        // cycle would have a 1-in-2^32 chance of colliding.
+        var source = Path.Combine(_tempDir, "photo.jpg");
+        var a = AtomicFile.ResolveTempPath(source);
+        var b = AtomicFile.ResolveTempPath(source);
+
+        Assert.NotEqual(a, b);
+    }
 }

@@ -13,7 +13,7 @@ public static class JpegMetadataStripper
         bool keepJfif = true;
 
         string actualOutputPath = overwriteSource
-            ? ResolveTempPath(sourcePath)
+            ? AtomicFile.ResolveTempPath(sourcePath)
             : AtomicFile.NextNonClashingPath(outputPath);
 
         FileStream? input = null;
@@ -32,7 +32,7 @@ public static class JpegMetadataStripper
             input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
 
             Span<byte> header = stackalloc byte[2];
-            ReadExact(input, header);
+            StreamHelpers.ReadExact(input, header, "JPEG");
 
             Span<byte> lenBuf = stackalloc byte[2];
             Span<byte> jfifSniff = stackalloc byte[5];
@@ -82,7 +82,7 @@ public static class JpegMetadataStripper
                         continue;
                     }
 
-                    ReadExact(input, lenBuf);
+                    StreamHelpers.ReadExact(input, lenBuf, "JPEG");
                     int segLen = (lenBuf[0] << 8) | lenBuf[1];
                     if (segLen < 2)
                     {
@@ -320,17 +320,6 @@ public static class JpegMetadataStripper
         return true;
     }
 
-    private static void ReadExact(Stream s, Span<byte> buffer)
-    {
-        int total = 0;
-        while (total < buffer.Length)
-        {
-            int n = s.Read(buffer.Slice(total));
-            if (n == 0) throw new EndOfStreamException("Unexpected end of JPEG stream.");
-            total += n;
-        }
-    }
-
     private static int ReadUpTo(Stream s, Span<byte> buffer)
     {
         int total = 0;
@@ -380,12 +369,5 @@ public static class JpegMetadataStripper
             if (n == 0) throw new EndOfStreamException("Unexpected end of JPEG stream during segment skip.");
             remaining -= n;
         }
-    }
-
-    private static string ResolveTempPath(string sourcePath)
-    {
-        var dir = Path.GetDirectoryName(sourcePath) ?? ".";
-        var name = Path.GetFileName(sourcePath);
-        return Path.Combine(dir, $".{name}.exifremover-{Guid.NewGuid():N}.tmp");
     }
 }
