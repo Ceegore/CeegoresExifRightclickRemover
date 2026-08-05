@@ -82,3 +82,5 @@ __pycache__/
 
 test_output.txt
 test_help.cmd
+tmp_probe/
+tmp_probe_output.txt

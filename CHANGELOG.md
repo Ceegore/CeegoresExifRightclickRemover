@@ -5,6 +5,29 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.22 — 2026-08-05 — 360° audit round 19 (iCCP double-surfacing probe)
+- **D80** (proactive) `tests/ExifRemover.Tests/IccGroupingTests.cs` —
+  no source bug was found, but the audit probed a latent risk: PNG
+  iCCP chunks can surface BOTH a `PngDirectory` entry (the chunk
+  name) and an `IccDirectory` entry (the parsed ICC metadata). If
+  `MetadataExtractor` ever starts surfacing both for a PNG with
+  iCCP, the current `MapGroup` would route them to two different
+  groups ("PNG iCCP" and "ICC Profile") with conflicting keep-set
+  membership under the Minimal profile (the PNG one is kept, the
+  ICC one isn't), producing a UI lie for the same iCCP data. The
+  audit checked the existing `PngWithTextTimeExifIccp` fixture:
+  `MetadataExtractor` currently surfaces only the `PngIccp` entry
+  (the `Icc` entry is not created because the fixture's compressed
+  ICC profile is too small to parse). The new test pins this
+  behavior — if a future `MetadataExtractor` version adds the
+  `Icc` entry, the test fails loudly with a clear diagnostic
+  message naming the iCCP double-surfacing pattern. The fix
+  (suppress the duplicate `Icc` entry for PNGs) is a one-liner
+  in `MetadataInspector.PngChunkProbe` once it becomes necessary.
+- 0 source-code changes; +2 forward-looking defensive tests.
+  xUnit: 75 → 77 tests (+2 for the iCCP probe). SelfTest: 16/16
+  stable.
+
 ## M2.20.21 — 2026-08-05 — 360° audit round 18 (0xFF fill bytes)
 - **D79** `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
   the `ReadMarker` helper consumed any `0xFF` "fill bytes" before
