@@ -33,8 +33,12 @@ public class ImageFormatShapeTests
 
         // The constant must be present.
         Assert.Contains("PngSignature", stripped);
-        // The constant must be used in the comparison.
-        Assert.Contains("SequenceEqual(PngSignature)", stripped);
+        // The constant must be used in the comparison. The call site
+        // slices the first 8 bytes of the header before SequenceEqual
+        // (the pre-fix code only checked the first 8 bytes, so a
+        // longer buffer — e.g. a full PNG file passed in by the test —
+        // would falsely fail if SequenceEqual checked all bytes).
+        Assert.Contains("Slice(0, 8).SequenceEqual(PngSignature)", stripped);
     }
 
     [Fact]

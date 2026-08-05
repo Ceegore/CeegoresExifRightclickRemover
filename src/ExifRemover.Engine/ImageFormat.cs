@@ -32,7 +32,7 @@ public static class ImageFormatDetector
             return ImageFormat.Jpeg;
         }
 
-        if (header.Length >= 8 && header.SequenceEqual(PngSignature))
+        if (header.Length >= 8 && header.Slice(0, 8).SequenceEqual(PngSignature))
         {
             return ImageFormat.Png;
         }
