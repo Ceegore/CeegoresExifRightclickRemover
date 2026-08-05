@@ -131,63 +131,18 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         }
     }
 
-    private static HashSet<string> ComputeKeepSet(ImageFormat? format, StripProfile profile)
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-        // D51: fail-safe default for any entry that falls through to the "Other" group
-        // (MetadataGroups.Other = "Other"). MapGroup's _ => dir.Name ?? MetadataGroups.Other
-        // fallback fires when MetadataExtractor surfaces a directory that doesn't match any
-        // of the explicit cases. The stripper operates on bytes, not on MetadataExtractor's
-        // directory abstraction, so we can't be 100% sure the stripper drops the underlying
-        // bytes — marking "Other" as kept is the safe default. If we don't know what the
-        // directory represents, don't claim the stripper will remove it. (Same fail-safe
-        // reasoning as the "PNGUNKNOWN" entry for the PNG path.)
-        set.Add("Other");
-        if (format == ImageFormat.Jpeg)
-        {
-            set.Add("JFIF");
-            // ICC is kept only under Minimal; Privacy and AllMetadata both strip it
-            // (must match JpegMetadataStripper, where keepIcc == (profile == Minimal)).
-            if (profile == StripProfile.Minimal)
-            {
-                set.Add("ICC");
-            }
-        }
-        else if (format == ImageFormat.Png)
-        {
-            // Chunks the stripper ALWAYS keeps regardless of profile (must mirror
-            // PngMetadataStripper.ShouldDrop, which never returns true for these types).
-            set.Add("PNGPHYS");
-            set.Add("PNGBKGD");
-            set.Add("PNGSBIT");
-            set.Add("PNGTRNS");
-
-            // D2: any chunk MetadataExtractor surfaces as "PNG Unknown" (e.g. a newer
-            // PngDirectory tag that doesn't match a known case in MapPngGroup, or a
-            // custom ancillary chunk) is kept by the stripper — PngMetadataStripper.ShouldDrop
-            // only returns true for tEXt/zTXt/iTXt/tIME/eXIf/iCCP/hIST/gAMA/cHRM/sRGB, and
-            // falls through to "return false" (keep) for anything else. The grid must
-            // match that contract: an unknown ancillary chunk must show as "Would be kept",
-            // never "Would be removed" (H2 lie).
-            set.Add("PNGUNKNOWN");
-
-            // Color-management chunks: kept under Privacy/Minimal, stripped under AllMetadata.
-            if (profile != StripProfile.AllMetadata)
-            {
-                set.Add("PNGSRGB");
-                set.Add("PNGCHRM");
-                set.Add("PNGGAMA");
-            }
-
-            // iCCP and hIST: kept only under Minimal.
-            if (profile == StripProfile.Minimal)
-            {
-                set.Add("PNGICCP");
-                set.Add("PNGHIST");
-            }
-        }
-        return set;
-    }
+    // D104 (M2.20.42): the pre-fix ComputeKeepSet was a 56-line
+    // static method here. The fix moved the canonical
+    // implementation to ExifRemover.Engine.KeepSet (where it's
+    // directly unit-testable from the Engine test project).
+    // This App-layer copy is now a 1-line pass-through delegate,
+    // matching the M2.20.40 D102 (FormatBytes) and M2.20.31 D93
+    // (KeepSetKey.For) pattern. The 12 direct xUnit unit tests
+    // in KeepSetTests.cs cover every (format × profile)
+    // combination and pin the contract — a future commit that
+    // re-inlines the keep-set logic here (or diverges it from
+    // the Engine's) would silently mis-classify grid entries.
+    private static HashSet<string> ComputeKeepSet(ImageFormat? format, StripProfile profile) => KeepSet.ForFormat(format, profile);
 
     public string ProfileLongDescription => SelectedProfile is null
         ? string.Empty
