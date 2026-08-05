@@ -188,4 +188,58 @@ internal static class StreamHelpers
             remaining -= n;
         }
     }
+
+    /// <summary>
+    /// Copies exactly <paramref name="count"/> bytes from <paramref name="src"/>
+    /// to <paramref name="dst"/>, looping until the count is satisfied (or
+    /// throwing on short reads, same defense as <see cref="ReadExact"/>).
+    /// Uses a 64 KB scratch buffer (clamped to <paramref name="count"/> for
+    /// small copies) to avoid one syscall per byte. Unlike
+    /// <c>Stream.CopyTo</c>, this is deterministic about the count and about
+    /// throwing on short streams.
+    ///
+    /// D108 (M2.20.46): the pre-fix code declared <c>CopyExactly(Stream,
+    /// Stream, int)</c> as a private method in <c>JpegMetadataStripper.cs</c>
+    /// (used 2x in the segment-walker to copy segment payloads verbatim). The
+    /// private helper survived 26 audit rounds (M2.20.20 → M2.20.45) because
+    /// it was scoped to a single file. The fix moves it to
+    /// <see cref="StreamHelpers"/> with the same <c>context</c> parameter as
+    /// <see cref="ReadExact"/> and <see cref="SkipExactly"/>, so a future
+    /// contributor who updates the copy strategy (e.g. uses
+    /// <c>Stream.CopyTo</c> on .NET 8, adds a progress callback, switches to
+    /// <c>RandomAccess.Copy</c>) updates the shared helper once and both
+    /// strippers benefit. The <c>int count</c> signature matches the JPEG
+    /// segLen width (uint16, max 65535 — fits in int comfortably); a future
+    /// PNG caller that needs a larger count can add a separate overload
+    /// (matching the D87 <c>SkipExactly</c> signature widening pattern).
+    /// </summary>
+    /// <param name="src">Source stream.</param>
+    /// <param name="dst">Destination stream.</param>
+    /// <param name="count">
+    /// Number of bytes to copy. Must be non-negative; the implementation
+    /// treats 0 as a no-op (no reads, no writes).
+    /// </param>
+    /// <param name="context">
+    /// Short tag inserted into the error message ("Unexpected end of
+    /// {context} stream during segment copy.") so the user knows which
+    /// stream truncated. Pass "JPEG" or "PNG" from the stripper call
+    /// sites.
+    /// </param>
+    public static void CopyExactly(Stream src, Stream dst, int count, string context)
+    {
+        if (count == 0) return;
+        var buf = new byte[Math.Min(count, 64 * 1024)];
+        int remaining = count;
+        while (remaining > 0)
+        {
+            int take = Math.Min(remaining, buf.Length);
+            int n = src.Read(buf, 0, take);
+            if (n == 0)
+            {
+                throw new EndOfStreamException($"Unexpected end of {context} stream during segment copy.");
+            }
+            dst.Write(buf, 0, n);
+            remaining -= n;
+        }
+    }
 }

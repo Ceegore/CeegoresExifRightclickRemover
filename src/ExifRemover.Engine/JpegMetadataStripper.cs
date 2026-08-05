@@ -112,7 +112,7 @@ public static class JpegMetadataStripper
                         // further scans of a progressive JPEG, ending with the EOI marker.
                         WriteMarker();
                         output.Write(lenBuf);
-                        CopyExactly(input, output, payloadLen);
+                        StreamHelpers.CopyExactly(input, output, payloadLen, "JPEG");
                         CopyRestVerbatim(input, output);
                         break;
                     }
@@ -130,7 +130,7 @@ public static class JpegMetadataStripper
 
                     WriteMarker();
                     output.Write(lenBuf);
-                    CopyExactly(input, output, payloadLen);
+                    StreamHelpers.CopyExactly(input, output, payloadLen, "JPEG");
                 }
             }
 
@@ -329,19 +329,5 @@ public static class JpegMetadataStripper
         marker = (byte)b2;
         fillByteCount = fills;
         return true;
-    }
-
-    private static void CopyExactly(Stream src, Stream dst, int count)
-    {
-        var buf = new byte[Math.Min(count, 64 * 1024)];
-        int remaining = count;
-        while (remaining > 0)
-        {
-            int take = Math.Min(remaining, buf.Length);
-            int n = src.Read(buf, 0, take);
-            if (n == 0) throw new EndOfStreamException("Unexpected end of JPEG stream during segment copy.");
-            dst.Write(buf, 0, n);
-            remaining -= n;
-        }
     }
 }

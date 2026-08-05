@@ -422,6 +422,122 @@ public class StreamHelpersTests
         Assert.Equal(1, StreamHelpers.CountStuffedFf00(data));
     }
 
+    // --- CopyExactly (D108, M2.20.46) ---------------------------------------
+    //
+    // The pre-fix code had `CopyExactly(Stream, Stream, int)` as a private
+    // method in `JpegMetadataStripper.cs` (used 2x in the segment-walker
+    // to copy segment payloads verbatim). The D108 fix moves the helper
+    // to `StreamHelpers` with the same `context` parameter as `ReadExact`
+    // and `SkipExactly`, so a future contributor who updates the copy
+    // strategy (e.g. uses `Stream.CopyTo` on .NET 8, adds a progress
+    // callback, switches to `RandomAccess.Copy`) updates the shared
+    // helper once and both strippers benefit. The stripper tests exercise
+    // `CopyExactly` indirectly (every segment-walker test goes through it),
+    // but no direct test pinned the helper's contract — these tests close
+    // the gap.
+
+    [Fact]
+    public void CopyExactly_StreamToStream_CopiesAllBytes()
+    {
+        // Sanity: a 10-byte source, a 10-byte count, expect all 10 bytes
+        // copied to the destination in order.
+        var srcBytes = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+        using var src = new MemoryStream(srcBytes);
+        using var dst = new MemoryStream();
+
+        StreamHelpers.CopyExactly(src, dst, 10, "TEST");
+
+        Assert.Equal(srcBytes, dst.ToArray());
+        Assert.Equal(10, src.Position);
+    }
+
+    [Fact]
+    public void CopyExactly_StreamShorterThanCount_Throws()
+    {
+        // Defense: a 5-byte source with a 10-byte count must throw, not
+        // silently copy fewer bytes (the pre-fix `Stream.Read` returns
+        // 0 on EOF, and the loop checks for that). The `context` tag
+        // must appear in the error message so the user knows which
+        // stream truncated.
+        var srcBytes = new byte[] { 1, 2, 3, 4, 5 };
+        using var src = new MemoryStream(srcBytes);
+        using var dst = new MemoryStream();
+
+        var ex = Assert.Throws<EndOfStreamException>(() =>
+            StreamHelpers.CopyExactly(src, dst, 10, "TEST"));
+        Assert.Contains("TEST", ex.Message);
+        Assert.Contains("segment copy", ex.Message);
+    }
+
+    [Fact]
+    public void CopyExactly_EmptyStream_NonZeroCount_Throws()
+    {
+        // Defense: an empty source with a non-zero count must throw.
+        // Same as the truncated case — the loop's first `Read` returns
+        // 0, the guard fires.
+        using var src = new MemoryStream(Array.Empty<byte>());
+        using var dst = new MemoryStream();
+
+        var ex = Assert.Throws<EndOfStreamException>(() =>
+            StreamHelpers.CopyExactly(src, dst, 1, "EMPTY"));
+        Assert.Contains("EMPTY", ex.Message);
+    }
+
+    [Fact]
+    public void CopyExactly_ZeroCount_NoOp()
+    {
+        // Edge case: count == 0 must be a no-op (no reads, no writes).
+        // This matches the `SkipExactly(long, 0)` no-op pattern from
+        // D87 and the M2.20.34 D96 UX-correction lesson (don't silently
+        // skip the user's intent).
+        using var src = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var dst = new MemoryStream();
+
+        StreamHelpers.CopyExactly(src, dst, 0, "TEST");
+
+        Assert.Empty(dst.ToArray());
+        Assert.Equal(0, src.Position);
+    }
+
+    [Fact]
+    public void CopyExactly_LargeCount_ReadsAcrossMultipleLoopIterations()
+    {
+        // Loop-exercise case: a 200 KB source (3+ chunks at 64 KB each)
+        // must copy all bytes, with the loop's `take = Math.Min(remaining,
+        // buf.Length)` correctly handing the tail (200 KB - 3*64 KB = 8 KB).
+        // The 64 KB scratch buffer is implementation-defined (see
+        // `StreamHelpers.CopyExactly`'s `Math.Min(count, 64 * 1024)`),
+        // so we don't pin a specific buffer size in the test — we just
+        // verify the count is satisfied and all bytes are copied.
+        var srcBytes = new byte[200 * 1024];
+        for (int i = 0; i < srcBytes.Length; i++) srcBytes[i] = (byte)(i & 0xFF);
+        using var src = new MemoryStream(srcBytes);
+        using var dst = new MemoryStream();
+
+        StreamHelpers.CopyExactly(src, dst, srcBytes.Length, "TEST");
+
+        Assert.Equal(srcBytes, dst.ToArray());
+        Assert.Equal(srcBytes.Length, src.Position);
+    }
+
+    [Fact]
+    public void CopyExactly_NonSeekableSource_StillCopiesAllBytes()
+    {
+        // The CopyExactly implementation does NOT branch on CanSeek (it
+        // always uses a read loop, not Stream.CopyTo which optimizes the
+        // seekable case). This test pins that behavior so a future
+        // refactor that adds a seekable fast path doesn't break the
+        // non-seekable contract. Uses the NonSeekableStream test
+        // helper from SkipExactly's tests.
+        var srcBytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE };
+        using var src = new NonSeekableStream(new MemoryStream(srcBytes));
+        using var dst = new MemoryStream();
+
+        StreamHelpers.CopyExactly(src, dst, srcBytes.Length, "TEST");
+
+        Assert.Equal(srcBytes, dst.ToArray());
+    }
+
     /// <summary>
     /// Test helper: a Stream wrapper that always reports <c>CanSeek = false</c>,
     /// so the SkipExactly helper takes the read-loop path even when the
