@@ -22,6 +22,7 @@
     <Compile Include="..\src\ExifRemover.Engine\AtomicFile.cs" Link="Engine\AtomicFile.cs" />
     <Compile Include="..\src\ExifRemover.Engine\ImageFormat.cs" Link="Engine\ImageFormat.cs" />
     <Compile Include="..\src\ExifRemover.Engine\JpegMetadataStripper.cs" Link="Engine\JpegMetadataStripper.cs" />
+    <Compile Include="..\src\ExifRemover.Engine\KeepSetKey.cs" Link="Engine\KeepSetKey.cs" />
     <Compile Include="..\src\ExifRemover.Engine\MetadataEntry.cs" Link="Engine\MetadataEntry.cs" />
     <Compile Include="..\src\ExifRemover.Engine\MetadataInspector.cs" Link="Engine\MetadataInspector.cs" />
     <Compile Include="..\src\ExifRemover.Engine\PathFilter.cs" Link="Engine\PathFilter.cs" />

@@ -470,32 +470,7 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
             || (row.Entry.Group?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
-    private static string GetChunkKey(MetadataEntry entry)
-    {
-        if (entry.Group.StartsWith("EXIF", StringComparison.Ordinal)) return "EXIF";
-        if (entry.Group == MetadataGroups.Iptc) return "IPTC";
-        if (entry.Group == MetadataGroups.Xmp) return "XMP";
-        if (entry.Group == MetadataGroups.Icc) return "ICC";
-        if (entry.Group == MetadataGroups.JpegComment) return "COM";
-        if (entry.Group == MetadataGroups.PngText) return "PNGTEXT";
-        if (entry.Group == MetadataGroups.PngTime) return "PNGTIME";
-        if (entry.Group == MetadataGroups.PngExif) return "PNGEXIF";
-        if (entry.Group == MetadataGroups.PngIccp) return "PNGICCP";
-        if (entry.Group == MetadataGroups.PngHist) return "PNGHIST";
-        if (entry.Group == MetadataGroups.PngSrgb) return "PNGSRGB";
-        if (entry.Group == MetadataGroups.PngChrm) return "PNGCHRM";
-        if (entry.Group == MetadataGroups.PngGama) return "PNGGAMA";
-        if (entry.Group == MetadataGroups.PngPhys) return "PNGPHYS";
-        if (entry.Group == MetadataGroups.PngBkgd) return "PNGBKGD";
-        if (entry.Group == MetadataGroups.PngSbit) return "PNGSBIT";
-        if (entry.Group == MetadataGroups.PngTrns) return "PNGTRNS";
-        // D2: explicit case for PngUnknown (otherwise the function falls through to
-        // `return entry.Group` which yields "PNG Unknown" with a space, never matching
-        // the keep-set key, so the grid would show "Would be removed" for a chunk the
-        // stripper keeps).
-        if (entry.Group == MetadataGroups.PngUnknown) return "PNGUNKNOWN";
-        return entry.Group;
-    }
+    private static string GetChunkKey(MetadataEntry entry) => KeepSetKey.For(entry);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public void OnPropertyChanged([CallerMemberName] string? name = null)
