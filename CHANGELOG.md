@@ -5,6 +5,76 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.20 — 2026-08-05 — 360° audit round 17 (edge cases)
+- **D71** `src/ExifRemover.Engine/MetadataInspector.cs:Inspect` — the
+  `ImageFormatDetector.DetectFile(path)` call was OUTSIDE the inspector's
+  try/catch, so a missing / inaccessible / locked / directory file
+  produced an unhandled `FileNotFoundException` /
+  `UnauthorizedAccessException` / `IOException` that propagated to
+  `OverlayViewModel.InspectData`'s `Task.Run` and surfaced as a confusing
+  stack trace in the status strip. The fix wraps DetectFile in a
+  dedicated try block with 4 catch arms (FileNotFound, DirectoryNotFound,
+  UnauthorizedAccess, generic IOException), each returning a
+  `FileInspection` with a clear, user-readable Error message and
+  `Format = Unknown`. The three error shapes are intentionally distinct
+  so a "file doesn't exist" doesn't show up as "access denied" and vice
+  versa. Two new tests in
+  `tests/ExifRemover.Tests/InspectorEdgeCasesTests.cs`:
+  `Inspect_NonExistentFile_ReturnsErrorNotThrow` and
+  `Inspect_DirectoryPath_ReturnsErrorNotThrow`.
+- **D72** `src/ExifRemover.Engine/JpegMetadataStripper.cs:Strip` and
+  `PngMetadataStripper.cs:Strip` — the `new FileInfo(sourcePath).Length`
+  call was OUTSIDE the stripper's try/catch (it sat between the
+  `actualOutputPath` assignment and the `try { ... }` block). The catch
+  block's cleanup logic (delete the temp output if it exists) therefore
+  didn't run for FileInfo errors, and any future code added to the
+  catch (logging, telemetry) would silently miss those failures. Fix:
+  move the FileInfo call inside the try block. Behavioural change is
+  minimal (the exception type and message are the same) but the cleanup
+  path now runs uniformly for every file-access error. The
+  `Strip_NonExistentJpegSource_…` and `Strip_NonExistentPngSource_…`
+  tests pin the contract: missing source → I/O exception → no orphan
+  output file.
+- **D77** `src/ExifRemover.Engine/MetadataInspector.cs:IsPrivacySensitive` —
+  the EXIF-directory pattern listed `ExifIfd0Directory`,
+  `ExifSubIfdDirectory`, and `ExifInteropDirectory`, but was missing
+  `ExifThumbnailDirectory`. The stripper drops the entire APP1 (EXIF),
+  which includes the thumbnail IFD, so the Action column correctly
+  showed "Would be removed" — but the sensitivity styling (the "this
+  is privacy-sensitive" colour/icon) said "not privacy-sensitive"
+  because the function returned `false` for any tag in
+  ExifThumbnailDirectory. A thumbnail is privacy-sensitive (it can
+  embed a separate image with its own metadata, including GPS
+  coordinates; it can be a different/cropped/edited version of the
+  original). Fix: add `ExifThumbnailDirectory` to the EXIF-directory
+  pattern. The "Exif Version / Flashpix Version / Components
+  Configuration" exclusion list is harmless for IFD1 — those tags are
+  IFD0-only and never appear in ExifThumbnailDirectory, so every
+  ExifThumbnailDirectory tag is now correctly marked privacy-sensitive.
+  New fixture `FixtureFactory.JpegWithExifThumbnail` (a JPEG with
+  IFD0 + IFD1 + an embedded 1x1 thumbnail JPEG) and two new tests in
+  `InspectorEdgeCasesTests.cs`:
+  `Inspect_ExifThumbnailDirectory_AllEntriesArePrivacySensitive`
+  (proves the new pattern entry) and
+  `Strip_JpegWithExifThumbnail_ThumbnailIstripped` (proves the
+  stripper still drops the thumbnail after the fix).
+- **D78** `src/ExifRemover.App/OverlayViewModel.cs` constructor —
+  the path loop added a `FileEntryViewModel` for every input path even
+  when two entries referred to the same file (e.g. "foo.jpg" and
+  "FOO.jpg" from a multi-select, or a hand-typed duplicate in the
+  registry). `_byPath` already used `OrdinalIgnoreCase` for lookup, but
+  the loop didn't check `_byPath.ContainsKey(p)` before adding to
+  `_files` — so the same file appeared twice in the ComboBox, and the
+  stripper processed it twice (the second call would either fail
+  because the source was modified, or write a duplicate
+  "_stripped (2)" sibling). Fix: dedupe with `_byPath.ContainsKey(p)`
+  before adding the VM. The fix is in WPF code (not directly
+  unit-testable from the net8.0 test project), but the same contract
+  is exercised by the batch tests (which use the same
+  `StripPipeline.StripBatch` and never produce duplicate siblings).
+- xUnit: 66 → 74 tests (+8 for D71 / D72 / D77). SelfTest: 16/16
+  stable.
+
 ## M2.20.19 — 2026-08-05 — 360° audit round 16
 - **D70** `install.cmd` `:do_build` subroutine silently swallowed
   `del` / `move` / `rmdir` failures via the `>nul 2>&1` family of

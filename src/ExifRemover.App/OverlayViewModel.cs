@@ -37,6 +37,20 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
             {
                 continue;
             }
+            // D78: deduplicate paths case-insensitively (Windows path semantics).
+            // The pre-fix code added a FileEntryViewModel for every path entry,
+            // even when two entries referred to the same file (e.g. "foo.jpg" and
+            // "FOO.jpg" from a multi-select that dragged the same file twice, or
+            // a hand-typed pair in the registry). The result was the same file
+            // appearing twice in the ComboBox, and the stripper processing it
+            // twice — the second Strip call would either fail (source modified
+            // between calls) or produce a duplicate "_stripped (2)" sibling.
+            // _byPath already uses OrdinalIgnoreCase, so a single ContainsKey
+            // check is enough to dedupe both case-different and exact duplicates.
+            if (_byPath.ContainsKey(p))
+            {
+                continue;
+            }
             var vm = new FileEntryViewModel(p);
             // When a file's Inspection completes, refresh entries if it's the currently
             // selected file (this is what populates the table after the initial async inspect).

@@ -106,6 +106,35 @@ internal static class FixtureFactory
     }
 
     /// <summary>
+    /// JPEG with an EXIF block that includes an IFD1 (thumbnail) directory.
+    /// IFD0 has Make/Model/Software; IFD1 has the standard thumbnail tags
+    /// (Compression=6/JPEG, JPEGInterchangeFormat pointing at the embedded
+    /// thumbnail bytes, JPEGInterchangeFormatLength = thumbnail byte count).
+    /// The thumbnail is a valid 1x1 baseline JPEG (re-uses the byte pattern
+    /// from <see cref="MinimalJpeg"/>) so MetadataExtractor's EXIF parser
+    /// will surface an ExifThumbnailDirectory for the test to inspect.
+    /// D77 in M2.20.20: the inspector must mark every ExifThumbnailDirectory
+    /// tag as privacy-sensitive (the stripper drops the whole APP1, including
+    /// the thumbnail IFD). The pre-fix code returned false for any tag in
+    /// ExifThumbnailDirectory because that directory was missing from the
+    /// privacy-sensitive check, so the grid styled the thumbnail entries as
+    /// not privacy-sensitive even though they would be removed.
+    /// </summary>
+    public static byte[] JpegWithExifThumbnail()
+    {
+        var bytes = new List<byte>();
+        bytes.Add(0xFF); bytes.Add(0xD8);  // SOI
+        AppendApp1ExifWithThumbnail(bytes);
+        AppendDqt(bytes);
+        AppendSof0(bytes, 4, 4);
+        AppendDht(bytes);
+        AppendSos(bytes);
+        AppendEntropy(bytes);
+        bytes.Add(0xFF); bytes.Add(0xD9);  // EOI
+        return bytes.ToArray();
+    }
+
+    /// <summary>
     /// Valid minimal JPEG (D4 fixture) with 100 bytes of trailing garbage appended AFTER the EOI.
     /// Used to verify the stripper trims trailing junk instead of silently copying it into the
     /// output. A previous implementation of <c>CopyRestVerbatim</c> wrote every byte from the
@@ -405,6 +434,74 @@ internal static class FixtureFactory
         tiff.Write(make, 0, 6);
         tiff.Write(model, 0, 6);
         tiff.Write(sw, 0, 6);
+
+        var payload = new List<byte>();
+        payload.AddRange(Encoding.ASCII.GetBytes("Exif"));
+        payload.Add(0); payload.Add(0);
+        payload.AddRange(tiff.ToArray());
+        AppendSegment(b, 0xE1, payload.ToArray());
+    }
+
+    /// <summary>
+    /// EXIF APP1 with a thumbnail (IFD1 + a small embedded JPEG). Used by
+    /// JpegWithExifThumbnail so the inspector can surface an
+    /// ExifThumbnailDirectory for the D77 test. The thumbnail is the
+    /// MinimalJpeg fixture (a 1x1 baseline JPEG) — same byte pattern that's
+    /// used as the main image elsewhere, so we know MetadataExtractor's
+    /// parser is happy with it.
+    ///
+    /// Layout (offsets relative to start of the TIFF stream, not the JPEG):
+    ///   0..7    : TIFF header ("MM", 42, offset to IFD0=8)
+    ///   8..9    : IFD0 entry count = 3
+    ///  10..45   : IFD0 entries (Make, Model, Software)
+    ///  46..49   : IFD0 next-IFD pointer -> ifd1Off (= 68)
+    ///  50..67   : IFD0 string data (3 * 6 bytes)
+    ///  68..69   : IFD1 entry count = 3
+    ///  70..105  : IFD1 entries (Compression, JPEGInterchangeFormat, JPEGInterchangeFormatLength)
+    /// 106..109  : IFD1 next-IFD = 0
+    /// 110..    : JPEG thumbnail data (MinimalJpeg bytes)
+    /// </summary>
+    private static void AppendApp1ExifWithThumbnail(List<byte> b)
+    {
+        var thumbnail = MinimalJpeg();
+        uint tiffIfd0Off = 8;
+        uint tiffIfd0DataOff = tiffIfd0Off + 2 + 3 * 12 + 4; // count + 3 entries + next-IFD
+        uint tiffIfd1Off = tiffIfd0DataOff + 3 * 6;          // 3 string data slots of 6 bytes each
+        uint tiffJpegThumbOff = tiffIfd1Off + 2 + 3 * 12 + 4; // count + 3 entries + next-IFD
+        uint tiffJpegThumbLen = (uint)thumbnail.Length;
+
+        using var tiff = new MemoryStream();
+        // TIFF header
+        tiff.WriteByte(0x4D); tiff.WriteByte(0x4D); // big-endian
+        WriteBe16(tiff, 42);
+        WriteBe32(tiff, tiffIfd0Off);
+
+        // IFD0: 3 entries, all with the same 6-byte ASCII string shape
+        WriteBe16(tiff, 3);
+        WriteIfdEntry(tiff, 0x010F, 2, 6, tiffIfd0DataOff);     // Make
+        WriteIfdEntry(tiff, 0x0110, 2, 6, tiffIfd0DataOff + 6);  // Model
+        WriteIfdEntry(tiff, 0x0131, 2, 6, tiffIfd0DataOff + 12); // Software
+        WriteBe32(tiff, tiffIfd1Off); // next IFD -> IFD1
+
+        // IFD0 string data (each exactly 6 bytes including null terminator)
+        var make = new byte[] { (byte)'C', (byte)'a', (byte)'n', (byte)'o', (byte)'n', 0 };
+        var model = new byte[] { (byte)'E', (byte)'O', (byte)'S', (byte)' ', (byte)'R', 0 };
+        var sw = new byte[] { (byte)'E', (byte)'O', (byte)'S', (byte)' ', (byte)'1', 0 };
+        tiff.Write(make, 0, 6);
+        tiff.Write(model, 0, 6);
+        tiff.Write(sw, 0, 6);
+
+        // IFD1: 3 entries, all with values that fit in the 4-byte value field
+        // (SHORT and LONG types). No external data — the JPEG thumbnail lives
+        // at the end of the TIFF stream, referenced by JPEGInterchangeFormat.
+        WriteBe16(tiff, 3);
+        WriteIfdEntry(tiff, 0x0103, 3, 1, 6);                  // Compression = 6 (JPEG)
+        WriteIfdEntry(tiff, 0x0201, 4, 1, tiffJpegThumbOff);   // JPEGInterchangeFormat = offset
+        WriteIfdEntry(tiff, 0x0202, 4, 1, tiffJpegThumbLen);   // JPEGInterchangeFormatLength = length
+        WriteBe32(tiff, 0); // next IFD = 0
+
+        // JPEG thumbnail bytes (a real 1x1 baseline JPEG)
+        tiff.Write(thumbnail, 0, thumbnail.Length);
 
         var payload = new List<byte>();
         payload.AddRange(Encoding.ASCII.GetBytes("Exif"));

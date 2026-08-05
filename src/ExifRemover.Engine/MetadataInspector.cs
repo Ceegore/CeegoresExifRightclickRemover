@@ -16,7 +16,71 @@ public static class MetadataInspector
 {
     public static FileInspection Inspect(string path)
     {
-        var format = ImageFormatDetector.DetectFile(path);
+        // D71: DetectFile's File.OpenRead call can throw FileNotFoundException,
+        // UnauthorizedAccessException, or IOException (file deleted between
+        // PathFilter.FileExists and here, file locked by another process, network
+        // share offline, etc.). The previous code called DetectFile OUTSIDE the
+        // try/catch, so the exception propagated up to OverlayViewModel.InspectData
+        // and crashed the Task.Run with an unhandled error. The user would see
+        // a stack trace in the status strip instead of a clean "could not read
+        // file: …" message. The fix: detect the format in a dedicated try block
+        // and return a FileInspection with a clear Error when the file is
+        // inaccessible. Three distinct error shapes are surfaced, in order of
+        // specificity:
+        //   1. File not found       (FileNotFoundException / DirectoryNotFoundException)
+        //   2. Access denied        (UnauthorizedAccessException)
+        //   3. Generic I/O failure  (anything else IOException-derived)
+        // The user gets a useful "this is why we couldn't read it" message in
+        // every case instead of a stack trace.
+        ImageFormat format;
+        try
+        {
+            format = ImageFormatDetector.DetectFile(path);
+        }
+        catch (FileNotFoundException ex)
+        {
+            return new FileInspection
+            {
+                Path = path,
+                Format = ImageFormat.Unknown,
+                Entries = Array.Empty<MetadataEntry>(),
+                FileSizeBytes = 0,
+                Error = $"File not found: {ex.Message}"
+            };
+        }
+        catch (DirectoryNotFoundException ex)
+        {
+            return new FileInspection
+            {
+                Path = path,
+                Format = ImageFormat.Unknown,
+                Entries = Array.Empty<MetadataEntry>(),
+                FileSizeBytes = 0,
+                Error = $"Directory not found: {ex.Message}"
+            };
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return new FileInspection
+            {
+                Path = path,
+                Format = ImageFormat.Unknown,
+                Entries = Array.Empty<MetadataEntry>(),
+                FileSizeBytes = 0,
+                Error = $"Access denied: {ex.Message}"
+            };
+        }
+        catch (IOException ex)
+        {
+            return new FileInspection
+            {
+                Path = path,
+                Format = ImageFormat.Unknown,
+                Entries = Array.Empty<MetadataEntry>(),
+                FileSizeBytes = 0,
+                Error = $"Could not read file: {ex.Message}"
+            };
+        }
 
         if (format == ImageFormat.Unknown)
         {
@@ -143,7 +207,19 @@ public static class MetadataInspector
         {
             return true;
         }
-        if (dir is ExifIfd0Directory or ExifSubIfdDirectory or ExifInteropDirectory)
+        // D77: ExifThumbnailDirectory is missing from this list — the stripper drops
+        // the entire APP1 (EXIF) including the thumbnail IFD, but the pre-fix code
+        // returned false (not privacy-sensitive) for any tag in that directory, so
+        // the review grid showed the thumbnail entries in a non-privacy-sensitive
+        // style even though they would be removed. A thumbnail is privacy-sensitive:
+        // it can embed a separate image with its own metadata, including GPS
+        // coordinates, and the thumbnail can be a different (cropped/edited) version
+        // of the original. The user needs to see it flagged. Same exception list
+        // (Exif Version / Flashpix Version / Components Configuration) applies, but
+        // those tags are IFD0-only — IFD1 only has the thumbnail-specific tags
+        // (Compression, XResolution, JPEGInterchangeFormat, …), so the pattern match
+        // would return true for every IFD1 tag in practice.
+        if (dir is ExifIfd0Directory or ExifSubIfdDirectory or ExifInteropDirectory or ExifThumbnailDirectory)
         {
             return tagName is not ("Exif Version" or "Flashpix Version" or "Components Configuration");
         }
