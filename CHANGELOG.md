@@ -5,6 +5,35 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.39 — 2026-08-05 — 360° audit round 36 (extract PNG chunk-type constants + eliminate per-chunk string allocation in PngChunkProbe)
+- **D101** `src/ExifRemover.Engine/PngMetadataStripper.cs` +
+  `src/ExifRemover.Engine/MetadataInspector.cs` —
+  applied the M2.20.38 D100 pattern (extract named
+  constants + SequenceEqual) to the PNG chunk-type
+  detection. Pre-fix: 12 inline 4-byte chunk-type
+  comparisons in `ShouldDrop` + 2 in `Strip` = 48
+  individual byte comparisons. Post-fix: 12 named
+  `ReadOnlySpan<byte>` constants
+  (`IhdrBytes`, `IendBytes`, `TextBytes`, `ZtxtBytes`,
+  `ItxtBytes`, `TimeBytes`, `ExifBytes`, `IccpBytes`,
+  `HistBytes`, `GamaBytes`, `ChrmBytes`, `SrgbBytes`)
+  in PngMetadataStripper.cs; 3 named constants
+  (`ExifBytes`, `HistBytes`, `IendBytes`) in
+  `MetadataInspector.PngChunkProbe`. All 14+3
+  comparison sites use `SequenceEqual`. The
+  PngChunkProbe fix also eliminated a per-chunk
+  string allocation
+  (`new string(new[] { (char)header[4], ... })`) that
+  allocated a string + 4 boxed chars per PNG chunk.
+  4 new source-shape tests in
+  `tests/ExifRemover.Tests/PngMetadataStripperShapeTests.cs`:
+  12 chunk-type constants must be present; regex
+  sweep for `typeBuf[N] == 'C'` should be 0 matches;
+  3 PngChunkProbe constants must be present; regex
+  sweep for `new string(new[]` should be 0 matches.
+- xUnit: 153 → 157 tests (+4 for D101). SelfTest:
+  17/17 stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.38 — 2026-08-05 — 360° audit round 35 (extract JfxxMagic + IccProfileMagic constants in JpegMetadataStripper)
 - **D100** `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
   the JPEG stripper's `ShouldDrop` had 2 inline byte-
