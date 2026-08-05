@@ -295,7 +295,11 @@ internal static class PngChunkProbe
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
             Span<byte> sig = stackalloc byte[8];
             Span<byte> header = stackalloc byte[8];
-            int n = fs.Read(sig);
+            // D92 (M2.20.30): routed through StreamHelpers.ReadUpTo (was a private
+            // TryReadExact here, byte-identical to the private ReadUpTo in
+            // JpegMetadataStripper). Best-effort read: a short signature read means
+            // "not a PNG" and we return without surfacing an entry.
+            int n = StreamHelpers.ReadUpTo(fs, sig);
             if (n < 8 || !sig.SequenceEqual(PngSignature))
             {
                 return;
@@ -303,7 +307,9 @@ internal static class PngChunkProbe
 
             while (true)
             {
-                if (TryReadExact(fs, header) < 8) return;
+                // D92: same helper, different contract — we expect 8 bytes and
+                // bail on short read (the stream is malformed or truncated).
+                if (StreamHelpers.ReadUpTo(fs, header) < 8) return;
 
                 int length = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
                 if (length < 0 || length > int.MaxValue) return; // malformed
@@ -348,17 +354,5 @@ internal static class PngChunkProbe
             // Probe failures must NEVER fail an inspect: a user inspecting a slightly-malformed
             // PNG should still see the MetadataExtractor entries, just without the eXIf hint.
         }
-    }
-
-    private static int TryReadExact(Stream s, Span<byte> buffer)
-    {
-        int total = 0;
-        while (total < buffer.Length)
-        {
-            int read = s.Read(buffer.Slice(total));
-            if (read == 0) return total;
-            total += read;
-        }
-        return total;
     }
 }

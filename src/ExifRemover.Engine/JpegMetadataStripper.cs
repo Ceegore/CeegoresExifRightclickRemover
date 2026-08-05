@@ -184,7 +184,11 @@ public static class JpegMetadataStripper
             if (marker == 0xE0 && keepJfif)
             {
                 long pos = input.Position;
-                int read = ReadUpTo(input, jfifSniff);
+                // D92 (M2.20.30): best-effort read routed through StreamHelpers.ReadUpTo
+                // (was a private ReadUpTo here, byte-identical to the TryReadExact in
+                // PngChunkProbe). A short read is acceptable here — if the segment is
+                // shorter than the 5-byte JFIF magic prefix, it can't be a JFIF header.
+                int read = StreamHelpers.ReadUpTo(input, jfifSniff);
                 input.Position = pos;
 
                 if (read >= 5 && jfifSniff.SequenceEqual(JfifMagic))
@@ -204,7 +208,9 @@ public static class JpegMetadataStripper
             if (marker == 0xE2 && keepIcc)
             {
                 long pos = input.Position;
-                int read = ReadUpTo(input, iccSniff);
+                // D92 (M2.20.30): routed through StreamHelpers.ReadUpTo (see JFIF comment above).
+                // The ICC profile sniff needs 12 bytes; a short read means "not an ICC profile".
+                int read = StreamHelpers.ReadUpTo(input, iccSniff);
                 input.Position = pos;
                 if (read >= 12)
                 {
@@ -328,18 +334,6 @@ public static class JpegMetadataStripper
         marker = (byte)b2;
         fillByteCount = fills;
         return true;
-    }
-
-    private static int ReadUpTo(Stream s, Span<byte> buffer)
-    {
-        int total = 0;
-        while (total < buffer.Length)
-        {
-            int n = s.Read(buffer.Slice(total));
-            if (n == 0) break;
-            total += n;
-        }
-        return total;
     }
 
     private static void CopyExactly(Stream src, Stream dst, int count)
