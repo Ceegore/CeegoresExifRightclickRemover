@@ -5,6 +5,69 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.25 — 2026-08-05 — 360° audit round 22 (extract `ReadExact` + `ResolveTempPath` helpers)
+- **D83** `AtomicFile.ResolveTempPath` (extracted) — the pre-fix
+  code declared a private `ResolveTempPath(string sourcePath)` in BOTH
+  `JpegMetadataStripper.cs` and `PngMetadataStripper.cs`. The two
+  copies were byte-identical (5 lines each, including the
+  `Guid.NewGuid()`-suffixed `.{name}.exifremover-<guid>.tmp`
+  filename pattern). This is the same DRY-drift pattern that R17 of
+  the SteamReviewTool audit found for back-door in-memory setters: a
+  future contributor who updates the temp-name scheme (e.g. to use a
+  stronger random source, to add a creation timestamp, to put the
+  temp file in a sibling directory instead of the source directory)
+  would have to remember to update the other copy too. Missed updates
+  silently diverge. Fix: extracted the helper to
+  `AtomicFile.ResolveTempPath`. Both strippers now call the shared
+  helper. The leading "." in the filename (Windows hidden-file
+  convention) and the `exifremover-{guid}.tmp` suffix (makes an
+  orphaned temp file attributable) are preserved.
+  New regression tests in `AtomicFileTests.cs`:
+  `ResolveTempPath_PutsTempFileInSameDirectory` (asserts the temp
+  path's directory is the same as the source's),
+  `ResolveTempPath_IncludesOriginalFilename` (asserts the leaf
+  contains the original filename, has the `.tmp` extension, and
+  starts with `.`),
+  `ResolveTempPath_TwoCalls_ProduceDifferentPaths` (asserts the
+  GUID suffix is unique per call).
+- **D84** `StreamHelpers.ReadExact` (new) — the pre-fix code
+  declared a private `ReadExact(Stream, Span<byte>)` in BOTH
+  `JpegMetadataStripper.cs` and `PngMetadataStripper.cs`. The two
+  copies were byte-identical except for the error-message string
+  ("JPEG stream" vs "PNG stream"). The same DRY-drift risk as D83:
+  a future contributor who changes the implementation (e.g. wraps
+  the throw in a custom exception type, adds a max-bytes guard,
+  switches to `Stream.ReadAtLeast` from .NET 8) would have to
+  remember to update both copies. Fix: extracted to a new file
+  `src/ExifRemover.Engine/StreamHelpers.cs` with a `context`
+  parameter (the error message becomes
+  `"Unexpected end of {context} stream."`). The stripper call
+  sites pass `"JPEG"` or `"PNG"` so the user-facing error message
+  is unchanged.
+  New regression tests in `StreamHelpersTests.cs`:
+  `ReadExact_ReadsAllBytes_AndFillsBuffer` (the happy path),
+  `ReadExact_EmptyStream_ZeroByteBuffer_Succeeds` (the no-op
+  boundary),
+  `ReadExact_StreamShorterThanBuffer_Throws` (the defining
+  behavior vs `Stream.Read`),
+  `ReadExact_EmptyStream_NonEmptyBuffer_Throws` (the other
+  boundary),
+  `ReadExact_ContextTagAppearsInExceptionMessage` (pins the
+  format-specific tag in the error message),
+  `ReadExact_LargeStream_ReadsAcrossMultipleLoopIterations` (a
+  50,000-byte read that forces at least one full loop iteration,
+  regression for an off-by-one in the `total` update).
+  The test project's csproj needed a new `<Compile Include>` for
+  the new `StreamHelpers.cs` (the test project embeds Engine
+  sources via `<Compile Include>` per the WDAC sandbox
+  workaround — adding a new Engine file requires a corresponding
+  test-project include; the same addition is required in
+  `ExifRemover.SelfTest.csproj`).
+- xUnit: 79 → 88 tests (+9 for D83+D84). SelfTest: 16/16 stable.
+- Real-image verifier: ALL CHECKS PASSED (refactor is
+  behavior-preserving — the byte-level outputs of both strippers
+  are identical to the pre-refactor outputs).
+
 ## M2.20.24 — 2026-08-05 — 360° audit round 21 (dead `Warning` property removal)
 - **D82** `src/ExifRemover.Engine/StripPipeline.cs:StripResult` —
   the pre-fix code declared a `Warning` property on `StripResult`

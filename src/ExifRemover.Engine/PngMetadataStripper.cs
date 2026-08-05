@@ -17,7 +17,7 @@ public static class PngMetadataStripper
         int dropped = 0;
 
         string actualOutputPath = overwriteSource
-            ? ResolveTempPath(sourcePath)
+            ? AtomicFile.ResolveTempPath(sourcePath)
             : AtomicFile.NextNonClashingPath(outputPath);
 
         bool sawIhdr = false;
@@ -34,7 +34,7 @@ public static class PngMetadataStripper
             input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
 
             Span<byte> sig = stackalloc byte[8];
-            ReadExact(input, sig);
+            StreamHelpers.ReadExact(input, sig, "PNG");
             if (!sig.SequenceEqual(Signature))
             {
                 throw new InvalidDataException("Not a PNG file (bad signature).");
@@ -51,7 +51,7 @@ public static class PngMetadataStripper
 
                 while (true)
                 {
-                    ReadExact(input, header);
+                    StreamHelpers.ReadExact(input, header, "PNG");
                     int length = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
                     typeBuf[0] = header[4]; typeBuf[1] = header[5]; typeBuf[2] = header[6]; typeBuf[3] = header[7];
 
@@ -91,9 +91,9 @@ public static class PngMetadataStripper
                     var data = length == 0 ? Array.Empty<byte>() : new byte[length];
                     if (length > 0)
                     {
-                        ReadExact(input, data);
+                        StreamHelpers.ReadExact(input, data, "PNG");
                     }
-                    ReadExact(input, crcBuf);
+                    StreamHelpers.ReadExact(input, crcBuf, "PNG");
 
                     uint crc = Crc32.Compute(crcTable, typeBuf, data);
                     output.Write(header);
@@ -215,17 +215,6 @@ public static class PngMetadataStripper
         return false;
     }
 
-    private static void ReadExact(Stream s, Span<byte> buffer)
-    {
-        int total = 0;
-        while (total < buffer.Length)
-        {
-            int n = s.Read(buffer.Slice(total));
-            if (n == 0) throw new EndOfStreamException("Unexpected end of PNG stream.");
-            total += n;
-        }
-    }
-
     private static void SkipExactly(Stream s, long count)
     {
         if (s.CanSeek)
@@ -253,13 +242,6 @@ public static class PngMetadataStripper
     private static string Ascii(ReadOnlySpan<byte> type)
     {
         return new string(new[] { (char)type[0], (char)type[1], (char)type[2], (char)type[3] });
-    }
-
-    private static string ResolveTempPath(string sourcePath)
-    {
-        var dir = Path.GetDirectoryName(sourcePath) ?? ".";
-        var name = Path.GetFileName(sourcePath);
-        return Path.Combine(dir, $".{name}.exifremover-{Guid.NewGuid():N}.tmp");
     }
 }
 

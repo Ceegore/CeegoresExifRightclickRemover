@@ -31,6 +31,7 @@
     <Compile Include="..\..\src\ExifRemover.Engine\MetadataInspector.cs" Link="Engine\MetadataInspector.cs" />
     <Compile Include="..\..\src\ExifRemover.Engine\PathFilter.cs" Link="Engine\PathFilter.cs" />
     <Compile Include="..\..\src\ExifRemover.Engine\PngMetadataStripper.cs" Link="Engine\PngMetadataStripper.cs" />
+    <Compile Include="..\..\src\ExifRemover.Engine\StreamHelpers.cs" Link="Engine\StreamHelpers.cs" />
     <Compile Include="..\..\src\ExifRemover.Engine\StripPipeline.cs" Link="Engine\StripPipeline.cs" />
     <Compile Include="..\..\src\ExifRemover.Engine\StripProfile.cs" Link="Engine\StripProfile.cs" />
   </ItemGroup>
