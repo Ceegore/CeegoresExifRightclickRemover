@@ -5,6 +5,36 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.45 — 2026-08-06 — 360° audit round 42 (remove dead 1-out-param ReadMarker overload in JpegMetadataStripper)
+- **D107** `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
+  deleted the `private static bool
+  ReadMarker(FileStream input, out byte marker)`
+  overload (13 lines). The pre-fix code had
+  two `ReadMarker` overloads: the 1-out-param
+  form was the original pre-D79 wrapper; the
+  2-out-param form (`out byte marker, out int
+  fillByteCount`) was added in M2.20.21 D79 to
+  surface the 0xFF fill-byte count to the
+  segment-walker so the stripper could re-emit
+  0xFF padding before the marker. After D79,
+  the 1-out-param form was a dead wrapper: it
+  just declared `int fillByteCount;` and called
+  the 2-out-param version, discarding the
+  fillByteCount. The single caller in `Strip`
+  (L65) uses the 2-out-param form directly.
+  R17-2 dead-code finding (same pattern as D82
+  dead `Warning` property, D85 dead `_allPaths`
+  field, D88 dead `_byPath` field). 1 new
+  source-shape regression test in
+  `JpegMetadataStripperShapeTests.cs` that pins
+  2 contracts: (1) the dead 1-out-param
+  overload pattern appears 0 times; (2) the
+  canonical 2-out-param overload appears
+  exactly 1 time.
+- xUnit: 202 → 203 tests (+1 for D107). All 203
+  green. SelfTest 17/17. Real-image verifier:
+  ALL CHECKS PASSED.
+
 ## M2.20.44 — 2026-08-06 — 360° audit round 41 (consolidate 4 PNG signature copies to 1 canonical public constant)
 - **D106** `src/ExifRemover.Engine/ImageFormat.cs` +
   `src/ExifRemover.Engine/MetadataInspector.cs` +
