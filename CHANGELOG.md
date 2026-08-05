@@ -5,6 +5,32 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.21 — 2026-08-05 — 360° audit round 18 (0xFF fill bytes)
+- **D79** `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
+  the `ReadMarker` helper consumed any `0xFF` "fill bytes" before
+  the actual marker byte (the JPEG spec allows arbitrary `0xFF`
+  padding between segments, and many encoders insert 1-2 fill bytes
+  before the EOI marker to align the file to a 2-byte boundary), but
+  the stripper's segment-walker only wrote `0xFF <marker>` (2 bytes)
+  for every segment. The fill bytes were silently dropped. A JPEG
+  with `0xFF` padding before the EOI would produce a smaller output
+  for no reason, and the `Changed` field was set to `true` for a
+  file that actually didn't change. The fix: `ReadMarker` returns the
+  fill byte count via an `out` parameter, and a local `WriteMarker()`
+  helper re-emits the fill bytes before the marker. The new helper
+  is used for every marker write site (EOI, SOS, standalone TEM/RSTn,
+  regular segments). The `CopyRestVerbatim` post-SOS path was
+  already correct (the for-loop finds `0xFF 0xD9` byte-pairs and
+  includes both bytes in `writeLen`).
+  New fixture `FixtureFactory.JpegWithFillBytes()` (a minimal JPEG
+  with 4 fill bytes: 2 after the SOI, 1 between the JFIF APP0 and
+  the DQT, 1 before the EOI) and new test
+  `JpegStripperTests.Strip_JpegWithFillBytes_OutputIsByteIdentical_NoSpuriousChanged`
+  in `tests/ExifRemover.Tests/JpegStripperTests.cs` (asserts the
+  output is byte-identical to the input and the `Changed` flag is
+  `false`).
+- xUnit: 74 → 75 tests (+1 for D79). SelfTest: 16/16 stable.
+
 ## M2.20.20 — 2026-08-05 — 360° audit round 17 (edge cases)
 - **D71** `src/ExifRemover.Engine/MetadataInspector.cs:Inspect` — the
   `ImageFormatDetector.DetectFile(path)` call was OUTSIDE the inspector's

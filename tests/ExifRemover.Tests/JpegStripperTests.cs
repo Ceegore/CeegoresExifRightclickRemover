@@ -455,4 +455,43 @@ public class JpegStripperTests : IDisposable
         Assert.DoesNotContain(inspection.Entries, e => e.Group == "File Type");
         Assert.DoesNotContain(inspection.Entries, e => e.Group == "Huffman");
     }
+
+    [Fact]
+    public void Strip_JpegWithFillBytes_OutputIsByteIdentical_NoSpuriousChanged()
+    {
+        // D79 (M2.20.21): the pre-fix ReadMarker consumed any 0xFF "fill bytes" before
+        // the marker byte (the JPEG spec allows arbitrary 0xFF padding between segments),
+        // but the stripper's segment-walker only wrote `0xFF <marker>` (2 bytes) for
+        // every segment — the fill bytes were silently dropped. A JPEG with 0xFF padding
+        // would produce a smaller output for no reason, and the Changed flag would be
+        // set to true for a file that actually didn't change. The fix: ReadMarker
+        // returns the fill byte count via an out parameter, and a local WriteMarker()
+        // helper re-emits the fill bytes before the marker.
+        //
+        // The fixture JpegWithFillBytes() injects 4 fill bytes total: 2 after the SOI,
+        // 1 between the JFIF APP0 and the DQT, and 1 before the EOI. The pre-fix
+        // stripper would produce a 4-byte-shorter output and trip the Changed flag.
+        var bytes = FixtureFactory.JpegWithFillBytes();
+        var src = WriteTemp(bytes, $"er-fill-{Guid.NewGuid():N}.jpg");
+        var outPath = Path.Combine(Path.GetTempPath(), $"er-fill-out-{Guid.NewGuid():N}.jpg");
+        _tempFiles.Add(outPath);
+
+        var result = JpegMetadataStripper.Strip(src, outPath, overwriteSource: false, StripProfile.Privacy);
+
+        // The file has no metadata to strip, so 0 segments dropped.
+        Assert.Equal(0, result.DroppedSegments);
+        // And the output must be byte-identical to the input — the fill bytes must
+        // round-trip through the stripper. A pre-fix stripper would produce a
+        // 4-byte-shorter output (3 lost fill bytes in the metadata section; the
+        // CopyRestVerbatim path handles entropy-data fill bytes correctly already).
+        var outBytes = File.ReadAllBytes(outPath);
+        Assert.Equal(bytes.Length, outBytes.Length);
+        Assert.Equal(bytes, outBytes);
+        // The Changed flag must be false — the file didn't change, only fill bytes
+        // were "preserved" (which is what a no-op strip should report).
+        Assert.False(result.Changed,
+            $"Pre-fix D79 bug: the file is byte-identical to the input but Changed=true " +
+            $"because the pre-fix code dropped 4 0xFF fill bytes. " +
+            $"Input {bytes.Length} bytes, output {outBytes.Length} bytes.");
+    }
 }
