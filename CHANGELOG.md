@@ -5,6 +5,43 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.30 — 2026-08-05 — 360° audit round 27 (DRY cleanup, extract ReadUpTo)
+- **D92** `src/ExifRemover.Engine/StreamHelpers.cs` — extracted a
+  best-effort `ReadUpTo(Stream, Span<byte>)` helper. The pre-fix
+  code had two byte-identical hand-rolled copies: a private
+  `JpegMetadataStripper.ReadUpTo` (used by the JFIF/ICC sniff paths
+  in `ShouldDrop`) and a private `PngChunkProbe.TryReadExact`
+  (nested in `MetadataInspector.cs`, used by the byte-level PNG
+  chunk walk). The two copies differed only in the method name
+  (`break` vs `return total` are control-flow variants of the
+  same exit semantics). Same DRY-drift pattern that D83
+  (ReadExact) and D87 (SkipExactly) addressed for the
+  throw-on-short-read variant. M2.20.25 D84 missed this because
+  the audit walked only the stripper files; the `PngChunkProbe`
+  class (nested inside `MetadataInspector.cs`) and the Jeg
+  stripper's `ReadUpTo` were both filtered out by a "this is
+  in the stripper" mental scope. The M2.20.30 audit explicitly
+  walked all best-effort read patterns in `src/**/*.cs` and
+  found the two unmerged copies. Fix: add
+  `StreamHelpers.ReadUpTo(Stream, Span<byte>)` and route both
+  call sites through it. Remove the two private methods. The
+  signature has no `context` parameter because the method
+  never throws — adding a never-read parameter today is dead
+  API surface; if a future change needs a tag, add it then.
+  5 new direct unit tests in
+  `tests/ExifRemover.Tests/StreamHelpersTests.cs` (full-fill,
+  short-stream, empty-stream, empty-buffer, large-stream
+  multi-iteration).
+- xUnit: 104 → 109 tests (+5 for D92). SelfTest: 16/16 stable.
+- Real-image verifier: ALL CHECKS PASSED.
+- Adversarial verification: `git stash push` of the 3 source
+  files yields a build error pointing at the 5 new test
+  methods (`CS0117: StreamHelpers does not contain a definition
+  for "ReadUpTo"`). Restoring the stash and re-running tests
+  passes. The pure-refactor shape (no behavior change,
+  byte-identical algorithm) means no semantic regression is
+  possible.
+
 ## M2.20.29 — 2026-08-05 — 360° audit round 26 (verifier IsValidJpeg/IsValidPng + LocateVerifier off-by-one)
 - **D90** `verify/Program.cs` — the pre-fix code unconditionally
   called `IsValidJpeg(outBytes)` to determine the
