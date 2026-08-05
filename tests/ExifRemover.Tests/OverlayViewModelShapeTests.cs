@@ -72,6 +72,48 @@ public class OverlayViewModelShapeTests
         Assert.DoesNotContain("_byPath", stripped);
     }
 
+    [Fact]
+    public void OverlayViewModel_EntryFilter_UsesLocalMatchesFunction()
+    {
+        // D105 (M2.20.43): the pre-fix EntryFilter had 3 inline repetitions of
+        //   `s?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false`
+        // for the Name, Value, and Group fields. The 3-rep is a textbook
+        // "DRY violation" — the same null-safe case-insensitive substring check
+        // duplicated 3 times in a single 7-line method. The fix extracts a
+        // local function `Matches(string? s) => ...` that captures `_filterText`
+        // automatically, so the 3 callers are just `Matches(row.Entry.Name)`
+        // etc. This test pins the contract: a future regression that
+        // re-introduces the 3 inline Contains calls (or removes the local
+        // function) would fail this test, forcing a conscious decision.
+        var path = LocateOverlayViewModel();
+        Assert.True(File.Exists(path),
+            $"Cannot find OverlayViewModel.cs at {path}.");
+
+        var source = File.ReadAllText(path);
+        var stripped = StripComments(source);
+
+        // (1) The local function declaration is present, exactly once.
+        //     Pattern: `bool Matches(string? s)` (whitespace tolerant).
+        var localFuncMatches = System.Text.RegularExpressions.Regex.Matches(
+            stripped, @"bool\s+Matches\s*\(\s*string\?\s+\w+\s*\)");
+        Assert.Single(localFuncMatches);
+
+        // (2) The inline `Contains(_filterText, StringComparison.OrdinalIgnoreCase)`
+        //     pattern appears EXACTLY ONCE — inside the local function body.
+        //     The pre-fix code had 3 occurrences (one per field); the post-fix
+        //     code has 1 (the local function). A regression that re-introduces
+        //     the 3 inline calls would fail this assertion.
+        var containsMatches = System.Text.RegularExpressions.Regex.Matches(
+            stripped, @"Contains\s*\(\s*_filterText\s*,\s*StringComparison\.OrdinalIgnoreCase\s*\)");
+        Assert.Single(containsMatches);
+
+        // (3) Sanity check: the 3 callers all delegate to `Matches(...)`.
+        //     The pre-fix code had no `Matches(` calls at all.
+        Assert.Contains("Matches(row.Entry.Name)", stripped);
+        Assert.Contains("Matches(row.Entry.Value)", stripped);
+        Assert.Contains("Matches(row.Entry.Group)", stripped);
+    }
+
     private static string LocateOverlayViewModel()
     {
         var dir = AppContext.BaseDirectory;

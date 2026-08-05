@@ -436,13 +436,17 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         UpdateStatusFromEntries();
     }
 
+    // D105: extract the null-safe case-insensitive Contains check into a local
+    // function so the 3 fields (Name, Value, Group) don't all repeat the
+    // `s?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false`
+    // boilerplate. The local function captures `_filterText` automatically.
     private bool EntryFilter(object obj)
     {
         if (obj is not EntryRow row) return false;
         if (string.IsNullOrEmpty(_filterText)) return true;
-        return (row.Entry.Name?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (row.Entry.Value?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (row.Entry.Group?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false);
+        return Matches(row.Entry.Name) || Matches(row.Entry.Value) || Matches(row.Entry.Group);
+
+        bool Matches(string? s) => s?.Contains(_filterText, StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
     private static string GetChunkKey(MetadataEntry entry) => KeepSetKey.For(entry);
