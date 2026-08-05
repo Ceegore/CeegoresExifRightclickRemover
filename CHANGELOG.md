@@ -5,6 +5,33 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.31 — 2026-08-05 — 360° audit round 28 (extract KeepSetKey to Engine)
+- **D93** `src/ExifRemover.Engine/KeepSetKey.cs` (new) —
+  extracted `OverlayViewModel.GetChunkKey` (a 18-branch
+  `if`-chain in the WPF-bound App layer, not directly
+  unit-testable from the Engine test project) to a new
+  `KeepSetKey.For(MetadataEntry)` helper. The new helper uses
+  a single `Dictionary<string, string>` mapping every known
+  `MetadataGroups` constant to its keep-set key, with the
+  "EXIF" prefix-match (one `StartsWith` check covers IFD0,
+  SubIFD, Interop, Thumbnail) preserved as a special case.
+  The D2 special case for `PngUnknown` (the
+  space-separated-vs-no-space contract) is preserved via an
+  explicit dictionary entry. The fallthrough for unknown
+  groups (`return entry.Group`) is preserved — same D51
+  fail-safe reasoning. The App layer keeps a one-line
+  `GetChunkKey` that just calls the helper.
+  23 new direct unit tests in
+  `tests/ExifRemover.Tests/KeepSetKeyTests.cs` (4 EXIF
+  prefix tests + 1 theory with 16 InlineData rows + 3
+  edge-case facts).
+- Per the M2.20.25 + M2.20.29 WDAC sandbox lesson: every
+  new Engine source file is added to all 3 csprojs' `<Compile
+  Include>` lists (Tests, SelfTest, Verifier) in the same
+  commit, so no follow-up is needed.
+- xUnit: 109 → 132 tests (+23 for D93). SelfTest: 16/16
+  stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.30 — 2026-08-05 — 360° audit round 27 (DRY cleanup, extract ReadUpTo)
 - **D92** `src/ExifRemover.Engine/StreamHelpers.cs` — extracted a
   best-effort `ReadUpTo(Stream, Span<byte>)` helper. The pre-fix
