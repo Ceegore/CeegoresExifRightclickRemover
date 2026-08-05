@@ -123,6 +123,98 @@ public class StreamHelpersTests
     }
 
     [Fact]
+    public void ReadUpTo_StreamFillsBuffer_ReturnsFullCount()
+    {
+        // D92 (M2.20.30): the pre-fix code had a hand-rolled TryReadExact in
+        // PngChunkProbe (MetadataInspector.cs) AND a hand-rolled ReadUpTo in
+        // JpegMetadataStripper.ShouldDrop (the jfifSniff / iccSniff sniff paths).
+        // Both were byte-identical except for the method name. After extraction
+        // to StreamHelpers.ReadUpTo, both call sites use a single implementation.
+        // The happy path: a 10-byte stream and a 10-byte buffer returns 10.
+        var bytes = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+        using var ms = new MemoryStream(bytes);
+        var buffer = new byte[10];
+
+        int read = StreamHelpers.ReadUpTo(ms, buffer);
+
+        Assert.Equal(10, read);
+        Assert.Equal(bytes, buffer);
+        Assert.Equal(10, ms.Position);
+    }
+
+    [Fact]
+    public void ReadUpTo_StreamShorterThanBuffer_ReturnsShortCount_DoesNotThrow()
+    {
+        // D92: the defining behavior of ReadUpTo vs ReadExact. A short stream
+        // produces the actual count (not an exception). This is the semantic
+        // difference that made the Jpeg stripper's sniff paths and the
+        // PngChunkProbe both want a best-effort read: a truncated or
+        // under-sized file is a valid "not the expected format" signal,
+        // not an error condition. If we used ReadExact here, the stripper
+        // would surface an EndOfStreamException to the user for files that
+        // just don't have a JFIF/ICC magic prefix.
+        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        var buffer = new byte[10];
+
+        int read = StreamHelpers.ReadUpTo(ms, buffer);
+
+        Assert.Equal(3, read);
+        Assert.Equal(1, buffer[0]);
+        Assert.Equal(2, buffer[1]);
+        Assert.Equal(3, buffer[2]);
+        Assert.Equal(0, buffer[3]); // remaining bytes untouched
+    }
+
+    [Fact]
+    public void ReadUpTo_EmptyStream_NonEmptyBuffer_ReturnsZero_DoesNotThrow()
+    {
+        // D92: empty-stream boundary. The ReadExact equivalent throws;
+        // ReadUpTo returns 0. The PngChunkProbe uses this to detect a
+        // truncated file (signature is 0 bytes) and bail out without
+        // surfacing an exception to the inspect path.
+        using var ms = new MemoryStream();
+        var buffer = new byte[5];
+
+        int read = StreamHelpers.ReadUpTo(ms, buffer);
+
+        Assert.Equal(0, read);
+    }
+
+    [Fact]
+    public void ReadUpTo_EmptyBuffer_NoOp_ReturnsZero()
+    {
+        // D92: zero-byte buffer boundary. The while-loop's condition
+        // (total < buffer.Length) is false on entry, so the loop body
+        // never runs and the method returns 0.
+        using var ms = new MemoryStream(new byte[] { 1, 2, 3 });
+        var buffer = new byte[0];
+
+        int read = StreamHelpers.ReadUpTo(ms, buffer);
+
+        Assert.Equal(0, read);
+        Assert.Equal(0, ms.Position);
+    }
+
+    [Fact]
+    public void ReadUpTo_LargeStream_ReadsAcrossMultipleLoopIterations()
+    {
+        // D92: a stream whose size forces the loop to iterate multiple
+        // times. Same regression shape as ReadExact's large-stream test —
+        // pin the loop's `total += n` update against an off-by-one. We use
+        // 50,000 bytes so the underlying Stream.Read call likely returns
+        // in multiple chunks (depending on the stream's internal buffer).
+        var bytes = new byte[50_000];
+        for (int i = 0; i < bytes.Length; i++) bytes[i] = (byte)(i & 0xFF);
+        using var ms = new MemoryStream(bytes);
+        var buffer = new byte[50_000];
+
+        int read = StreamHelpers.ReadUpTo(ms, buffer);
+
+        Assert.Equal(50_000, read);
+        Assert.Equal(bytes, buffer);
+    }
+
+    [Fact]
     public void SkipExactly_SeekableStream_AdvancesPositionByCount()
     {
         // D87 (M2.20.27): the pre-fix code had a private SkipExactly in BOTH

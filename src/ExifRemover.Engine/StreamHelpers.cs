@@ -47,6 +47,43 @@ internal static class StreamHelpers
     }
 
     /// <summary>
+    /// Best-effort read: reads up to <paramref name="buffer"/>.Length bytes from
+    /// <paramref name="s"/> and returns the actual count read (0..buffer.Length).
+    /// Unlike <see cref="ReadExact"/>, does NOT throw on short reads — the caller
+    /// is expected to check the return value and decide whether a partial fill is
+    /// acceptable (e.g. for sniffing, where "didn't have enough bytes to match
+    /// a magic prefix" is a valid "no, this isn't the expected format" signal).
+    ///
+    /// D92 (M2.20.30): the pre-fix code had a hand-rolled
+    /// <c>TryReadExact(Stream, Span&lt;byte&gt;)</c> in <c>PngChunkProbe</c>
+    /// (in <c>MetadataInspector.cs</c>) AND a hand-rolled
+    /// <c>ReadUpTo(Stream, Span&lt;byte&gt;)</c> in <c>JpegMetadataStripper.ShouldDrop</c>
+    /// (the jfifSniff / iccSniff sniff paths). The two copies were byte-identical
+    /// except for the method name. Same DRY-drift pattern as D83 (ReadExact) and
+    /// D87 (SkipExactly): a future contributor who updates one copy (e.g. adds
+    /// a max-bytes guard, switches to <c>Stream.ReadAtLeast</c> from .NET 8,
+    /// adds a logging side-channel) would have to remember to update the other
+    /// copy too — and a missed update would silently keep the two best-effort
+    /// read paths divergent.
+    ///
+    /// The signature takes no <c>context</c> parameter because the method never
+    /// throws (so there's no error message to tag). If a future change needs a
+    /// tag (e.g. a debug log on partial reads), add it then — adding a
+    /// never-read parameter today is dead API surface.
+    /// </summary>
+    public static int ReadUpTo(Stream s, Span<byte> buffer)
+    {
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            int n = s.Read(buffer.Slice(total));
+            if (n == 0) return total;
+            total += n;
+        }
+        return total;
+    }
+
+    /// <summary>
     /// Skips exactly <paramref name="count"/> bytes from <paramref name="s"/>.
     /// On a seekable stream, uses <c>Stream.Seek</c> (O(1)) and trust-but-verify
     /// the count doesn't run past the end of the stream. On a non-seekable
