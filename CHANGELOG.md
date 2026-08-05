@@ -5,6 +5,39 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.37 — 2026-08-05 — 360° audit round 34 (clean up IsValidPng redundant check + extract PNG signature / IEND constants)
+- **D99** `verify/Program.cs` — the verifier's
+  `IsValidPng` (added in M2.20.29 D90) had 3 minor
+  code-quality issues that survived 8 audit rounds:
+  (1) **Redundant bounds check** — L146 had
+  `if (b.Length < 12) return false;` and L154 had the
+  SAME check. L154 is unreachable because L146
+  already returned. Fix: consolidated to a single
+  `if (b.Length < 20)` at the top (20 = 8-byte
+  signature + 12-byte IEND trailer, the actual minimum
+  for a valid PNG).
+  (2) **Hardcoded PNG signature** — 8 inline byte
+  comparisons (`b[0] != 0x89 || b[1] != 0x50 || ...`).
+  Fix: extracted to `static readonly byte[] PngSignature`
+  constant and used `b.AsSpan(0, 8).SequenceEqual(PngSignature)`.
+  (3) **Hardcoded IEND type** — 4 individual char
+  comparisons (`b[...] != 'I' || ... != 'E' || ... != 'N'
+  || ... != 'D'`). Fix: extracted to
+  `static readonly byte[] IendTypeBytes` (initialized
+  from `"IEND"u8.ToArray()`) and used `SequenceEqual`.
+  Post-fix: `IsValidPng` is 8 lines of body vs 14,
+  the named constants make the PNG format structure
+  visible at a glance. Behavior is identical.
+  3 new source-shape tests in
+  `tests/ExifRemover.Tests/VerifierShapeTests.cs`:
+  regex match for `b.Length < 12` should be 0;
+  `PngSignature` constant must be present and used in
+  `SequenceEqual(PngSignature)`;
+  `IendTypeBytes` constant must be present and used in
+  `SequenceEqual(IendTypeBytes)`.
+- xUnit: 147 → 150 tests (+3 for D99). SelfTest: 17/17
+  stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.36 — 2026-08-05 — 360° audit round 33 (project-wide sweep promotes CountStuffedFf00 to StreamHelpers)
 - **D98** `src/ExifRemover.Engine/StreamHelpers.cs` —
   promoted the byte-stuffing counter to a shared
