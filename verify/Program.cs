@@ -151,7 +151,7 @@ internal static class Program
         // is 8 + 12 = 20 bytes; the L146 check handles both bounds.
         if (b.Length < 20) return false;
         // PNG signature: 89 50 4E 47 0D 0A 1A 0A (8 bytes).
-        if (!b.AsSpan(0, 8).SequenceEqual(PngSignature)) return false;
+        if (!b.AsSpan(0, 8).SequenceEqual(ImageFormatDetector.PngSignature)) return false;
         // IEND: a 4-byte length (0), a 4-byte type ("IEND"), and a 4-byte CRC.
         // The length field for IEND is 0 (no payload), so the 4 bytes before
         // "IEND" must be 0x00 0x00 0x00 0x00.
@@ -168,8 +168,13 @@ internal static class Program
     // PNG signature: 89 50 4E 47 0D 0A 1A 0A (per RFC 2083 / ISO/IEC 15948).
     // The first 4 bytes are also intentionally chosen to include
     // high-bit and control characters to detect bad file transfers.
-    private static readonly byte[] PngSignature =
-        { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    //
+    // D106 (M2.20.44): the pre-fix code had its own local `PngSignature`
+    // byte[] here, duplicating the canonical one in
+    // `ExifRemover.Engine.ImageFormatDetector.PngSignature`. The verifier
+    // embeds the Engine sources via `<Compile Include>`, so it can
+    // reference the Engine's public constant directly. The 4× duplicate
+    // (Engine x3 + Verifier x1) is now consolidated to a single source.
 
     // IEND chunk type as ASCII bytes ("IEND" = 49 45 4E 44).
     // Using a byte array (not a string) for the SequenceEqual comparison

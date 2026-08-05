@@ -274,15 +274,13 @@ public static class MetadataInspector
 /// </summary>
 internal static class PngChunkProbe
 {
-    private static readonly byte[] PngSignature = new byte[]
-    {
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
-    };
-
     // PNG chunk type constants (4-byte ASCII strings per the PNG spec). The
     // pre-fix code allocated a string per chunk (`new string(new[] { ... })`)
     // and compared strings. The D101 (M2.20.39) fix uses byte comparison
     // against named constants, matching the PngMetadataStripper pattern.
+    // The PNG signature (8 bytes) used to be duplicated here as a local
+    // `PngSignature` byte array; D106 (M2.20.44) deletes that copy and
+    // references the canonical `ImageFormatDetector.PngSignature` instead.
     private static ReadOnlySpan<byte> ExifBytes => "eXIf"u8;
     private static ReadOnlySpan<byte> HistBytes => "hIST"u8;
     private static ReadOnlySpan<byte> IendBytes => "IEND"u8;
@@ -308,7 +306,7 @@ internal static class PngChunkProbe
             // JpegMetadataStripper). Best-effort read: a short signature read means
             // "not a PNG" and we return without surfacing an entry.
             int n = StreamHelpers.ReadUpTo(fs, sig);
-            if (n < 8 || !sig.SequenceEqual(PngSignature))
+            if (n < 8 || !sig.SequenceEqual(ImageFormatDetector.PngSignature))
             {
                 return;
             }

@@ -2,7 +2,12 @@ namespace ExifRemover.Engine;
 
 public static class PngMetadataStripper
 {
-    private static readonly byte[] Signature = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    // The PNG signature (8 bytes) used to be duplicated here as a local
+    // `Signature` byte array (note: under a DIFFERENT name from the
+    // canonical `PngSignature` in ImageFormatDetector, which made the
+    // duplication invisible to a `grep PngSignature` sweep). D106
+    // (M2.20.44) deletes that copy and references the canonical
+    // `ImageFormatDetector.PngSignature` instead.
 
     // PNG chunk type constants (each chunk type is a 4-byte ASCII string per the
     // PNG spec). The pre-fix code had inline byte comparisons for each chunk type
@@ -57,7 +62,7 @@ public static class PngMetadataStripper
 
             Span<byte> sig = stackalloc byte[8];
             StreamHelpers.ReadExact(input, sig, "PNG");
-            if (!sig.SequenceEqual(Signature))
+            if (!sig.SequenceEqual(ImageFormatDetector.PngSignature))
             {
                 throw new InvalidDataException("Not a PNG file (bad signature).");
             }
