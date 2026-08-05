@@ -150,6 +150,42 @@ internal static class FixtureFactory
     }
 
     /// <summary>
+    /// JPEG with 0xFF "fill bytes" between the SOI and the rest of the file. The JPEG spec
+    /// allows arbitrary 0xFF padding between segments, and many encoders insert 1-2 fill
+    /// bytes before the EOI marker to align the file size to a 2-byte boundary. D79 in
+    /// M2.20.21: the pre-fix <c>ReadMarker</c> consumed any fill bytes before returning the
+    /// marker, but the stripper's segment-walker only wrote <c>0xFF &lt;marker&gt;</c> (2
+    /// bytes) — the fill bytes were silently dropped. The output was smaller than the input
+    /// for no reason, and the <c>Changed</c> field was set to <c>true</c> for a file that
+    /// actually didn't change. This fixture has fill bytes before the first metadata
+    /// segment (between SOI and the JFIF APP0), between two metadata segments (between
+    /// APP0 and the next APP segment), and before the EOI marker. The pre-fix stripper
+    /// would produce a 3-byte-shorter output (2 fill before APP0 + 1 fill before EOI
+    /// = 3 lost fill bytes) and trip the Changed flag.
+    /// </summary>
+    public static byte[] JpegWithFillBytes()
+    {
+        // Build a minimal JPEG, but inject 0xFF fill bytes at three points: after the SOI,
+        // between the JFIF APP0 and the SOS, and before the EOI. The injected fill bytes
+        // are NOT part of the standard JPEG layout — the spec allows them, but no encoder
+        // is required to emit them. We use 2 fill bytes after the SOI and 1 fill byte
+        // before the EOI, which is a common pattern.
+        var bytes = new List<byte>();
+        bytes.Add(0xFF); bytes.Add(0xD8);  // SOI
+        bytes.Add(0xFF); bytes.Add(0xFF);  // 2 fill bytes (D79)
+        AppendApp0Jfif(bytes);
+        bytes.Add(0xFF);  // 1 fill byte (D79)
+        AppendDqt(bytes);
+        AppendSof0(bytes, 4, 4);
+        AppendDht(bytes);
+        AppendSos(bytes);
+        AppendEntropy(bytes);
+        bytes.Add(0xFF);  // 1 fill byte before EOI (D79)
+        bytes.Add(0xFF); bytes.Add(0xD9);  // EOI
+        return bytes.ToArray();
+    }
+
+    /// <summary>
     /// Minimal PNG with only the critical chunks. 4x4 RGB.
     /// </summary>
     public static byte[] MinimalPng()

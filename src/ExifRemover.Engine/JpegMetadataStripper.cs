@@ -48,23 +48,37 @@ public static class JpegMetadataStripper
 
                 while (true)
                 {
-                    if (!ReadMarker(input, out byte marker))
+                    int fillByteCount;
+                    if (!ReadMarker(input, out byte marker, out fillByteCount))
                     {
                         throw new InvalidDataException($"Unexpected end of file while reading JPEG segments at offset {input.Position}.");
+                    }
+
+                    // D79: re-emit any 0xFF fill bytes that ReadMarker consumed before the marker.
+                    // The pre-fix code only wrote `0xFF <marker>` (2 bytes) for every segment, which
+                    // silently dropped fill bytes. A JPEG with 0xFF padding before the EOI would
+                    // produce a smaller output and trip the Changed flag for a file that
+                    // actually didn't change. The helper restores byte-for-byte output.
+                    void WriteMarker()
+                    {
+                        for (int i = 0; i < fillByteCount; i++)
+                        {
+                            output.WriteByte(MarkerPrefix);
+                        }
+                        output.WriteByte(MarkerPrefix);
+                        output.WriteByte(marker);
                     }
 
                     if (marker == 0xD9)
                     {
                         // EOI before any scan (degenerate, but pass it through and stop).
-                        output.WriteByte(MarkerPrefix);
-                        output.WriteByte(marker);
+                        WriteMarker();
                         break;
                     }
                     if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
                     {
                         // Standalone markers (TEM / RSTn) carry no length; copy verbatim.
-                        output.WriteByte(MarkerPrefix);
-                        output.WriteByte(marker);
+                        WriteMarker();
                         continue;
                     }
 
@@ -83,8 +97,7 @@ public static class JpegMetadataStripper
                         // byte of the file verbatim. This preserves the entropy-coded bitstream
                         // byte-for-byte (including 0xFF00 byte-stuffing and RSTn markers) and any
                         // further scans of a progressive JPEG, ending with the EOI marker.
-                        output.WriteByte(MarkerPrefix);
-                        output.WriteByte(marker);
+                        WriteMarker();
                         output.Write(lenBuf);
                         CopyExactly(input, output, payloadLen);
                         CopyRestVerbatim(input, output);
@@ -98,8 +111,7 @@ public static class JpegMetadataStripper
                         continue;
                     }
 
-                    output.WriteByte(MarkerPrefix);
-                    output.WriteByte(marker);
+                    WriteMarker();
                     output.Write(lenBuf);
                     CopyExactly(input, output, payloadLen);
                 }
@@ -260,20 +272,36 @@ public static class JpegMetadataStripper
 
     private static bool ReadMarker(FileStream input, out byte marker)
     {
+        // D79: ReadMarker consumes any 0xFF "fill bytes" before the actual marker byte
+        // (the JPEG spec allows arbitrary 0xFF padding between segments). The fill bytes
+        // are significant — a JPEG with 0xFF padding before the EOI marker would
+        // otherwise produce a smaller output and trip the Changed flag for files that
+        // actually didn't change. Return the count via the helper call site (the
+        // single caller below uses a local WriteMarker() to re-emit the fill bytes
+        // before the marker).
+        int fillByteCount;
+        return ReadMarker(input, out marker, out fillByteCount);
+    }
+
+    private static bool ReadMarker(FileStream input, out byte marker, out int fillByteCount)
+    {
         int b1 = input.ReadByte();
-        if (b1 == -1) { marker = 0; return false; }
+        if (b1 == -1) { marker = 0; fillByteCount = 0; return false; }
         if (b1 != MarkerPrefix)
         {
             throw new InvalidDataException($"Expected 0xFF marker byte but got 0x{b1:X2} at file offset {input.Position - 1}.");
         }
         int b2 = input.ReadByte();
-        if (b2 == -1) { marker = 0; return false; }
+        if (b2 == -1) { marker = 0; fillByteCount = 0; return false; }
+        int fills = 0;
         while (b2 == 0xFF)
         {
+            fills++;
             b2 = input.ReadByte();
-            if (b2 == -1) { marker = 0; return false; }
+            if (b2 == -1) { marker = 0; fillByteCount = fills; return false; }
         }
         marker = (byte)b2;
+        fillByteCount = fills;
         return true;
     }
 
