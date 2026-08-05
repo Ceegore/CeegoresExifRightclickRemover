@@ -5,6 +5,43 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.36 — 2026-08-05 — 360° audit round 33 (project-wide sweep promotes CountStuffedFf00 to StreamHelpers)
+- **D98** `src/ExifRemover.Engine/StreamHelpers.cs` —
+  promoted the byte-stuffing counter to a shared
+  `StreamHelpers.CountStuffedFf00(ReadOnlySpan<byte>)`
+  helper. The pre-fix code had a hand-rolled `int
+  Count(byte[] b)` (or local function with the same
+  body) in 4 locations: `verify/Program.cs`
+  (`CountStuffed`), `src/ExifRemover.SelfTest/Program.cs`
+  (`CountStuffedFf00`, added in M2.20.33 D95), and 2
+  local functions in `JpegStripperTests.cs`. The
+  M2.20.33 D95 audit found 2 sites in SelfTest but
+  missed the verifier and the xUnit tests. The
+  M2.20.36 audit did a full project-wide sweep and
+  found all 4. The fix promotes the helper to
+  `StreamHelpers` (the same class holding `ReadExact`,
+  `SkipExactly`, `ReadUpTo` from M2.20.25/27/30) and
+  replaces all 4 sites.
+  11 new tests in 2 test classes: 8 direct unit tests
+  for `CountStuffedFf00` in `StreamHelpersTests.cs`
+  (empty span, single byte, 0xFF not followed by 0x00,
+  interleaved pairs, trailing 0xFF with no following
+  byte, all-ones, all-zeros, 0x00 0xFF directionality)
+  + 3 source-shape tests in `StreamHelpersShapeTests.cs`
+  (hand-rolled body appears exactly 1 time, verifier
+  must not declare `int CountStuffed(byte[]`,
+  SelfTest must not declare `int CountStuffedFf00(ReadOnlySpan<byte>`).
+  The adversarial check (temporarily break the helper
+  to return 0) caught 3 of 8 direct unit tests + the
+  SelfTest's existing direct test, validating the
+  M2.20.33 D95 fix in retrospect. The 2 JpegStripperTests
+  that USE the helper still passed (because `Count(src)
+  == Count(out)` when both return 0) — the M2.20.33 D95
+  lesson reinforced: shared helpers need DIRECT unit
+  tests, not just integration coverage.
+- xUnit: 136 → 147 tests (+11 for D98). SelfTest: 17/17
+  stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.35 — 2026-08-05 — 360° audit round 32 (drop ExifRemover.Tests namespace prefix in SelfTest)
 - **D97** `src/ExifRemover.SelfTest/Program.cs` —
   project-wide sweep for verbose namespace prefixes found
