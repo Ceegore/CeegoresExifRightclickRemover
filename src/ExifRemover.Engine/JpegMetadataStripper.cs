@@ -5,6 +5,19 @@ public static class JpegMetadataStripper
     private const byte MarkerPrefix = 0xFF;
 
     private static ReadOnlySpan<byte> JfifMagic => new byte[] { 0x4A, 0x46, 0x49, 0x46, 0x00 };
+    // JFXX (JFIF extension) magic prefix: 4A 46 58 58 00. Per the JFIF standard,
+    // APP0 segments whose 5-byte prefix is JFXX (instead of JFIF) carry a
+    // thumbnail image, not a JFIF header. We keep JFXX segments under the
+    // same rules as JFIF (the thumbnail is color-management data, not
+    // personal info) — but the prefix is distinct from JFIF.
+    private static ReadOnlySpan<byte> JfxxMagic => new byte[] { 0x4A, 0x46, 0x58, 0x58, 0x00 };
+    // ICC profile magic prefix: 49 43 43 5F 50 52 4F 46 49 4C 45 00 = "ICC_PROFILE\0"
+    // (12 bytes). Per the ICC profile spec, every ICC profile starts with
+    // this 12-byte header. APP2 segments whose 12-byte prefix matches are
+    // ICC profiles and are kept under the Privacy/Minimal profiles'
+    // "keep ICC" rule.
+    private static ReadOnlySpan<byte> IccProfileMagic => new byte[]
+        { 0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00 };
 
     public static StripResult Strip(string sourcePath, string outputPath, bool overwriteSource, StripProfile profile)
     {
@@ -196,7 +209,7 @@ public static class JpegMetadataStripper
                     reason = "JFIF";
                     return false;
                 }
-                if (read >= 5 && jfifSniff[0] == 0x4A && jfifSniff[1] == 0x46 && jfifSniff[2] == 0x58 && jfifSniff[3] == 0x58 && jfifSniff[4] == 0x00)
+                if (read >= 5 && jfifSniff.SequenceEqual(JfxxMagic))
                 {
                     reason = "JFXX";
                     return false;
@@ -212,15 +225,10 @@ public static class JpegMetadataStripper
                 // The ICC profile sniff needs 12 bytes; a short read means "not an ICC profile".
                 int read = StreamHelpers.ReadUpTo(input, iccSniff);
                 input.Position = pos;
-                if (read >= 12)
+                if (read >= 12 && iccSniff.SequenceEqual(IccProfileMagic))
                 {
-                    if (iccSniff[0] == 0x49 && iccSniff[1] == 0x43 && iccSniff[2] == 0x43 && iccSniff[3] == 0x5F
-                        && iccSniff[4] == 0x50 && iccSniff[5] == 0x52 && iccSniff[6] == 0x4F && iccSniff[7] == 0x46
-                        && iccSniff[8] == 0x49 && iccSniff[9] == 0x4C && iccSniff[10] == 0x45 && iccSniff[11] == 0x00)
-                    {
-                        reason = "ICC profile";
-                        return false;
-                    }
+                    reason = "ICC profile";
+                    return false;
                 }
             }
 
