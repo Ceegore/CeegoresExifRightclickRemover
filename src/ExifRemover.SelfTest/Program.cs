@@ -123,8 +123,8 @@ internal static class Program
                     // hand-rolled the 4-byte JPEG signature check inline —
                     // both byte-identical to the "Overwrite-in-place" test
                     // below (L160-168 in the pre-fix file).
-                    if (CountStuffedFf00(stripped) != CountStuffedFf00(original))
-                        throw new Exception($"stuffed 0xFF00 count changed: orig={CountStuffedFf00(original)} out={CountStuffedFf00(stripped)}");
+                    if (StreamHelpers.CountStuffedFf00(stripped) != StreamHelpers.CountStuffedFf00(original))
+                        throw new Exception($"stuffed 0xFF00 count changed: orig={StreamHelpers.CountStuffedFf00(original)} out={StreamHelpers.CountStuffedFf00(stripped)}");
                     AssertValidJpeg(stripped);
                 }
                 finally { TryDelete(src); TryDelete(outPath); }
@@ -157,7 +157,7 @@ internal static class Program
                     JpegMetadataStripper.Strip(src, Path.Combine(Path.GetTempPath(), "ignored.jpg"), true, StripProfile.Privacy);
                     var after = File.ReadAllBytes(src);
                     // D95: collapsed to the CountStuffedFf00 helper.
-                    if (CountStuffedFf00(after) != CountStuffedFf00(original))
+                    if (StreamHelpers.CountStuffedFf00(after) != StreamHelpers.CountStuffedFf00(original))
                         throw new Exception("stuffed 0xFF00 lost during overwrite");
                 }
                 finally { TryDelete(src); }
@@ -293,17 +293,17 @@ internal static class Program
         Test("Helpers: CountStuffedFf00 counts byte-stuffed 0xFF00 pairs",
             () =>
             {
-                if (CountStuffedFf00(ReadOnlySpan<byte>.Empty) != 0)
+                if (StreamHelpers.CountStuffedFf00(ReadOnlySpan<byte>.Empty) != 0)
                     throw new Exception("Empty span should return 0");
-                if (CountStuffedFf00(new byte[] { 0xFF }) != 0)
+                if (StreamHelpers.CountStuffedFf00(new byte[] { 0xFF }) != 0)
                     throw new Exception("Single byte should return 0 (no following byte to pair with)");
-                if (CountStuffedFf00(new byte[] { 0xFF, 0xAB }) != 0)
+                if (StreamHelpers.CountStuffedFf00(new byte[] { 0xFF, 0xAB }) != 0)
                     throw new Exception("0xFF followed by non-0x00 should not count");
                 // 3 stuffed pairs interleaved with non-stuffed bytes.
-                if (CountStuffedFf00(new byte[] { 0xFF, 0x00, 0xAB, 0xCD, 0xFF, 0x00, 0xEF, 0xFF, 0x00, 0x12 }) != 3)
+                if (StreamHelpers.CountStuffedFf00(new byte[] { 0xFF, 0x00, 0xAB, 0xCD, 0xFF, 0x00, 0xEF, 0xFF, 0x00, 0x12 }) != 3)
                     throw new Exception("Expected 3 stuffed 0xFF00 pairs");
                 // Trailing 0xFF with no following byte — should not count.
-                if (CountStuffedFf00(new byte[] { 0xFF, 0x00, 0xFF }) != 1)
+                if (StreamHelpers.CountStuffedFf00(new byte[] { 0xFF, 0x00, 0xFF }) != 1)
                     throw new Exception("Trailing 0xFF with no following byte should not count");
             });
 
@@ -373,27 +373,6 @@ internal static class Program
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
-
-    /// <summary>
-    /// D95 (M2.20.33): counts the number of <c>0xFF 0x00</c> byte pairs in
-    /// <paramref name="data"/>. JPEG entropy-coded segments use <c>0xFF 0x00</c>
-    /// as a byte-stuffing escape for any <c>0xFF</c> byte that appears in the
-    /// bitstream (so a real marker <c>0xFF xx</c> can never be confused with
-    /// raw data). The SelfTest's "Stuffed bytes preserved" tests count these
-    /// pairs before and after a strip to verify the stripper didn't accidentally
-    /// drop or duplicate any. Pre-fix, the test had a local <c>int Count(ReadOnlySpan&lt;byte&gt;)</c>
-    /// function declared inside TWO test methods (byte-identical, 5 lines each).
-    /// The M2.20.32 D94 audit walked WPF-bound App code; the M2.20.33 D95 audit
-    /// walked SelfTest code, which is integration-test code (not Engine code, not
-    /// App code) and had escaped the prior DRY sweeps entirely.
-    /// </summary>
-    private static int CountStuffedFf00(ReadOnlySpan<byte> data)
-    {
-        int n = 0;
-        for (int i = 0; i < data.Length - 1; i++)
-            if (data[i] == 0xFF && data[i + 1] == 0x00) n++;
-        return n;
     }
 
     /// <summary>

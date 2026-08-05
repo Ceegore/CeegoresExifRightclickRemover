@@ -108,7 +108,7 @@ internal static class Program
                     : false; // unknown format — neither validator applies
             Console.WriteLine($"output_format={outputFormat}");
             Console.WriteLine($"output_decodes={(outputValid ? "yes" : "no")}");
-            Console.WriteLine($"stuffed_ff00_count_input={CountStuffed(bytes)} output={CountStuffed(outBytes)}");
+            Console.WriteLine($"stuffed_ff00_count_input={StreamHelpers.CountStuffedFf00(bytes)} output={StreamHelpers.CountStuffedFf00(outBytes)}");
 
             return 0;
         }
@@ -124,14 +124,6 @@ internal static class Program
         for (int i = 0; i < b.Length - 1; i++)
             if (b[i] == 0xFF && b[i + 1] == 0xDA) return i;
         return -1;
-    }
-
-    private static int CountStuffed(byte[] b)
-    {
-        int n = 0;
-        for (int i = 0; i < b.Length - 1; i++)
-            if (b[i] == 0xFF && b[i + 1] == 0x00) n++;
-        return n;
     }
 
     private static bool IsValidJpeg(byte[] b)

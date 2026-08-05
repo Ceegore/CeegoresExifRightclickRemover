@@ -374,16 +374,12 @@ public class JpegStripperTests : IDisposable
         var outBytes = File.ReadAllBytes(outPath);
 
         // Count the 0xFF 0x00 byte-stuffing pairs in each. The stripper must preserve every one.
-        int CountStuffed(ReadOnlySpan<byte> data)
-        {
-            int n = 0;
-            for (int i = 0; i < data.Length - 1; i++)
-                if (data[i] == 0xFF && data[i + 1] == 0x00) n++;
-            return n;
-        }
-
-        int srcStuffed = CountStuffed(srcBytes);
-        int outStuffed = CountStuffed(outBytes);
+        // D98 (M2.20.36): collapsed to the shared StreamHelpers.CountStuffedFf00
+        // helper (the pre-fix code had a local function here, byte-identical
+        // to 3 other copies in the codebase — verifier, SelfTest, and a
+        // second local function later in this same file).
+        int srcStuffed = StreamHelpers.CountStuffedFf00(srcBytes);
+        int outStuffed = StreamHelpers.CountStuffedFf00(outBytes);
         Assert.Equal(srcStuffed, outStuffed);
         // The output must remain a structurally-valid JPEG: SOI ... EOI.
         Assert.Equal(0xFF, outBytes[0]);
@@ -432,14 +428,10 @@ public class JpegStripperTests : IDisposable
         Assert.Equal(0xD8, afterBytes[1]);
         Assert.Equal(0xFF, afterBytes[^2]);
         Assert.Equal(0xD9, afterBytes[^1]);
-        int CountStuffed(ReadOnlySpan<byte> data)
-        {
-            int n = 0;
-            for (int i = 0; i < data.Length - 1; i++)
-                if (data[i] == 0xFF && data[i + 1] == 0x00) n++;
-            return n;
-        }
-        Assert.Equal(CountStuffed(originalBytes), CountStuffed(afterBytes));
+        // D98 (M2.20.36): collapsed to the shared StreamHelpers.CountStuffedFf00
+        // helper. The pre-fix code had a local function here, byte-identical
+        // to 3 other copies in the codebase.
+        Assert.Equal(StreamHelpers.CountStuffedFf00(originalBytes), StreamHelpers.CountStuffedFf00(afterBytes));
     }
 
     [Fact]
