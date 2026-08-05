@@ -4,6 +4,28 @@ public static class PngMetadataStripper
 {
     private static readonly byte[] Signature = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 
+    // PNG chunk type constants (each chunk type is a 4-byte ASCII string per the
+    // PNG spec). The pre-fix code had inline byte comparisons for each chunk type
+    // (4 individual byte comparisons per check) at 12 sites across ShouldDrop
+    // and Strip. The D101 (M2.20.39) fix extracted them to named constants
+    // and uses SequenceEqual for the comparison, matching the pattern
+    // established by D100 in JpegMetadataStripper.
+    private static ReadOnlySpan<byte> IhdrBytes => "IHDR"u8;
+    private static ReadOnlySpan<byte> IendBytes => "IEND"u8;
+    // tEXt is the textual metadata chunk (keyword + text). The first byte's
+    // case can vary per the PNG spec (a "safe-to-copy" bit), but in practice
+    // every implementation uses lowercase t for the textual chunks.
+    private static ReadOnlySpan<byte> TextBytes => "tEXt"u8;
+    private static ReadOnlySpan<byte> ZtxtBytes => "zTXt"u8;
+    private static ReadOnlySpan<byte> ItxtBytes => "iTXt"u8;
+    private static ReadOnlySpan<byte> TimeBytes => "tIME"u8;
+    private static ReadOnlySpan<byte> ExifBytes => "eXIf"u8;
+    private static ReadOnlySpan<byte> IccpBytes => "iCCP"u8;
+    private static ReadOnlySpan<byte> HistBytes => "hIST"u8;
+    private static ReadOnlySpan<byte> GamaBytes => "gAMA"u8;
+    private static ReadOnlySpan<byte> ChrmBytes => "cHRM"u8;
+    private static ReadOnlySpan<byte> SrgbBytes => "sRGB"u8;
+
     /// <summary>
     /// PNG chunk lengths are technically limited to 2^31-1 by the spec, but in practice the
     /// largest legitimate chunk (a single IDAT for a multi-gigapixel image) is well under
@@ -63,12 +85,12 @@ public static class PngMetadataStripper
 
                     bool drop = ShouldDrop(typeBuf, profile);
 
-                    if (typeBuf[0] == 'I' && typeBuf[1] == 'H' && typeBuf[2] == 'D' && typeBuf[3] == 'R')
+                    if (typeBuf.SequenceEqual(IhdrBytes))
                     {
                         sawIhdr = true;
                         drop = false;
                     }
-                    else if (typeBuf[0] == 'I' && typeBuf[1] == 'E' && typeBuf[2] == 'N' && typeBuf[3] == 'D')
+                    else if (typeBuf.SequenceEqual(IendBytes))
                     {
                         sawIend = true;
                         drop = false;
@@ -174,47 +196,28 @@ public static class PngMetadataStripper
             return false;
         }
 
-        if (type[0] == 't' && (type[1] == 'E' || type[1] == 'e') && type[2] == 'X' && type[3] == 't')
-        {
-            return true;
-        }
-        if (type[0] == 'z' && type[1] == 'T' && type[2] == 'X' && type[3] == 't')
-        {
-            return true;
-        }
-        if (type[0] == 'i' && type[1] == 'T' && type[2] == 'X' && type[3] == 't')
+        if (type.SequenceEqual(TextBytes) ||
+            type.SequenceEqual(ZtxtBytes) ||
+            type.SequenceEqual(ItxtBytes))
         {
             return true;
         }
 
-        if (type[0] == 't' && type[1] == 'I' && type[2] == 'M' && type[3] == 'E')
+        if (type.SequenceEqual(TimeBytes) ||
+            type.SequenceEqual(ExifBytes))
         {
             return true;
         }
 
-        if (type[0] == 'e' && type[1] == 'X' && type[2] == 'I' && type[3] == 'f')
-        {
-            return true;
-        }
-
-        if (type[0] == 'i' && type[1] == 'C' && type[2] == 'C' && type[3] == 'P')
-        {
-            return profile != StripProfile.Minimal;
-        }
-        if (type[0] == 'h' && type[1] == 'I' && type[2] == 'S' && type[3] == 'T')
+        if (type.SequenceEqual(IccpBytes) ||
+            type.SequenceEqual(HistBytes))
         {
             return profile != StripProfile.Minimal;
         }
 
-        if (type[0] == 'g' && type[1] == 'A' && type[2] == 'M' && type[3] == 'A')
-        {
-            return profile == StripProfile.AllMetadata;
-        }
-        if (type[0] == 'c' && type[1] == 'H' && type[2] == 'R' && type[3] == 'M')
-        {
-            return profile == StripProfile.AllMetadata;
-        }
-        if (type[0] == 's' && type[1] == 'R' && type[2] == 'G' && type[3] == 'B')
+        if (type.SequenceEqual(GamaBytes) ||
+            type.SequenceEqual(ChrmBytes) ||
+            type.SequenceEqual(SrgbBytes))
         {
             return profile == StripProfile.AllMetadata;
         }
