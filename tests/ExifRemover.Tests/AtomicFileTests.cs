@@ -137,4 +137,98 @@ public class AtomicFileTests : IDisposable
 
         Assert.NotEqual(a, b);
     }
+
+    [Fact]
+    public void CleanupOrphanedOutput_FileExists_OverwriteFalse_DeletesFile()
+    {
+        // D86: when overwriteSource=false, the output is a sibling file
+        // (e.g. "photo_stripped.jpg" or "photo (2).jpg"). If the strip
+        // throws after writing the partial output, the catch block must
+        // delete the orphan. The pre-fix code had this logic inlined in
+        // both strippers; the post-fix routes through this helper.
+        var outputPath = Path.Combine(_tempDir, "photo_stripped.jpg");
+        File.WriteAllBytes(outputPath, new byte[] { 0x01, 0x02 });
+
+        AtomicFile.CleanupOrphanedOutput(outputPath, sourcePath: "/dev/null/source.jpg", overwriteSource: false);
+
+        Assert.False(File.Exists(outputPath), "Output file should be deleted.");
+    }
+
+    [Fact]
+    public void CleanupOrphanedOutput_FileExists_OverwriteTrue_DifferentPath_DeletesFile()
+    {
+        // D86: when overwriteSource=true, the output is initially a temp file
+        // (e.g. ".photo.jpg.exifremover-<guid>.tmp"). If the strip throws
+        // BEFORE the File.Replace, the catch block must delete the temp file
+        // (which is a different path from the source). The condition
+        // `actualOutputPath != sourcePath` is the trigger.
+        var tempPath = Path.Combine(_tempDir, ".photo.jpg.exifremover-abc123.tmp");
+        var sourcePath = Path.Combine(_tempDir, "photo.jpg");
+        File.WriteAllBytes(tempPath, new byte[] { 0x01, 0x02 });
+
+        AtomicFile.CleanupOrphanedOutput(tempPath, sourcePath, overwriteSource: true);
+
+        Assert.False(File.Exists(tempPath), "Temp file should be deleted.");
+    }
+
+    [Fact]
+    public void CleanupOrphanedOutput_FileExists_OverwriteTrue_SamePath_DoesNotDelete()
+    {
+        // D86: when overwriteSource=true AND the strip succeeded (so the
+        // File.Replace has already moved the temp file to the source
+        // path), the catch block must NOT delete the source. The condition
+        // `actualOutputPath != sourcePath` is false in this case, so the
+        // delete is skipped. This protects the just-written file from
+        // being deleted by the catch block (which would happen if the
+        // actualOutputPath was updated to sourcePath after a successful
+        // strip and then re-entered the catch — but that shouldn't
+        // happen, but we want the helper to be safe regardless).
+        var path = Path.Combine(_tempDir, "photo.jpg");
+        File.WriteAllBytes(path, new byte[] { 0x01, 0x02 });
+
+        AtomicFile.CleanupOrphanedOutput(path, path, overwriteSource: true);
+
+        Assert.True(File.Exists(path), "File at source path must NOT be deleted.");
+    }
+
+    [Fact]
+    public void CleanupOrphanedOutput_FileDoesNotExist_NoOp()
+    {
+        // D86: if the strip throws before writing ANY output, the catch
+        // block runs against a non-existent path. The helper must no-op
+        // (not throw, not delete anything). File.Delete is a no-op for
+        // non-existent files but we check existence first to avoid a
+        // pointless syscall.
+        var path = Path.Combine(_tempDir, "never-existed.jpg");
+        Assert.False(File.Exists(path));
+
+        AtomicFile.CleanupOrphanedOutput(path, sourcePath: "/dev/null/source.jpg", overwriteSource: false);
+
+        // Still doesn't exist (and no exception was thrown).
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void CleanupOrphanedOutput_FileLocked_DoesNotThrow()
+    {
+        // D86: the helper's internal try/catch must swallow any exception
+        // (e.g. the file is locked by an AV scan). A cleanup failure must
+        // not mask the original stripper exception that the caller's catch
+        // block is re-throwing. The test: open a file with FileShare.None
+        // (exclusive lock), then try to clean it up. The helper must
+        // return normally (not throw).
+        var path = Path.Combine(_tempDir, "locked.jpg");
+        File.WriteAllBytes(path, new byte[] { 0x01, 0x02 });
+
+        // Hold an exclusive lock on the file.
+        using var lockHandle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        // Cleanup must not throw.
+        var ex = Record.Exception(() =>
+            AtomicFile.CleanupOrphanedOutput(path, sourcePath: "/dev/null/source.jpg", overwriteSource: false));
+        Assert.Null(ex);
+
+        // The file still exists (the lock prevented the delete).
+        Assert.True(File.Exists(path));
+    }
 }

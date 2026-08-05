@@ -149,7 +149,13 @@ public static class JpegMetadataStripper
         }
         catch
         {
-            try { if (File.Exists(actualOutputPath) && (!overwriteSource || actualOutputPath != sourcePath)) File.Delete(actualOutputPath); } catch { }
+            // D86 (M2.20.26): the inline cleanup expression was extracted to
+            // AtomicFile.CleanupOrphanedOutput. The semantic is identical:
+            // delete the output file if (a) it exists, (b) it's not the same
+            // path as the source under the overwrite path. Swallow any
+            // cleanup exception so it doesn't mask the stripper exception
+            // that this catch is re-throwing.
+            AtomicFile.CleanupOrphanedOutput(actualOutputPath, sourcePath, overwriteSource);
             throw;
         }
         finally
