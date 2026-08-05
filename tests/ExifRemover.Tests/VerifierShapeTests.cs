@@ -75,6 +75,15 @@ public class VerifierShapeTests
         // `b.AsSpan(0, 8).SequenceEqual(PngSignature)` for the
         // comparison. A regression that re-inlines the signature
         // would fail this test.
+        //
+        // D106 (M2.20.44): the canonical PngSignature is now in
+        // `ExifRemover.Engine.ImageFormatDetector` (consolidated
+        // from 4 duplicate copies: ImageFormatDetector +
+        // MetadataInspector + PngMetadataStripper + this verifier).
+        // The verifier's local PngSignature field is deleted; the
+        // comparison now references `ImageFormatDetector.PngSignature`.
+        // The test pins the new pattern: the verifier does NOT
+        // declare its own PngSignature field.
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
         path = Path.GetFullPath(path);
         var verifierPath = Path.Combine(path, "verify", "Program.cs");
@@ -84,10 +93,24 @@ public class VerifierShapeTests
         var src = File.ReadAllText(verifierPath);
         var stripped = StripComments(src);
 
-        // The constant must be present.
-        Assert.Contains("PngSignature", stripped);
-        // The constant must be used in the comparison.
-        Assert.Contains("SequenceEqual(PngSignature)", stripped);
+        // (1) The verifier does NOT declare its own PngSignature
+        //     field (the post-D106 contract). The pre-fix code had
+        //     `private static readonly byte[] PngSignature = ...`.
+        //     A regression that re-introduces the local field
+        //     would fail this assertion.
+        Assert.DoesNotContain("byte[] PngSignature", stripped);
+
+        // (2) The verifier references the canonical Engine constant
+        //     in the comparison: `SequenceEqual(ImageFormatDetector.PngSignature)`.
+        Assert.Contains("SequenceEqual(ImageFormatDetector.PngSignature)", stripped);
+
+        // (3) The PNG signature byte literal (the 8 bytes: 89 50
+        //     4E 47 0D 0A 1A 0A) does NOT appear as an inline literal
+        //     in the verifier. The canonical constant is the only
+        //     place these 8 bytes should live in the Engine+Verifier
+        //     codebase. A regression that re-introduces the inline
+        //     literal would fail this assertion.
+        Assert.DoesNotContain("0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A", stripped);
     }
 
     [Fact]
