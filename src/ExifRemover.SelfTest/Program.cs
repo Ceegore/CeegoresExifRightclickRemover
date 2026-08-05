@@ -1,5 +1,6 @@
 using System.Text;
 using ExifRemover.Engine;
+using ExifRemover.Tests;
 using MetadataExtractor;
 
 namespace ExifRemover.SelfTest;
@@ -18,7 +19,7 @@ internal static class Program
         Test("JpegStripper: Privacy removes EXIF/XMP/ICC/COM and keeps JFIF",
             () =>
             {
-                var bytes = ExifRemover.Tests.FixtureFactory.JpegWithExifXmpIccAndComment();
+                var bytes = FixtureFactory.JpegWithExifXmpIccAndComment();
                 var src = Path.Combine(Path.GetTempPath(), "er-jpg-test.jpg");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-jpg-out.jpg");
                 File.WriteAllBytes(src, bytes);
@@ -43,7 +44,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-jpg-min.jpg");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-jpg-min-out.jpg");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.JpegWithExifXmpIccAndComment());
+                File.WriteAllBytes(src, FixtureFactory.JpegWithExifXmpIccAndComment());
                 try
                 {
                     JpegMetadataStripper.Strip(src, outPath, false, StripProfile.Minimal);
@@ -59,7 +60,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-jpg-all.jpg");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-jpg-all-out.jpg");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.JpegWithExifXmpIccAndComment());
+                File.WriteAllBytes(src, FixtureFactory.JpegWithExifXmpIccAndComment());
                 try
                 {
                     JpegMetadataStripper.Strip(src, outPath, false, StripProfile.AllMetadata);
@@ -74,7 +75,7 @@ internal static class Program
         Test("JpegStripper: Truncated input throws, original untouched",
             () =>
             {
-                var bytes = ExifRemover.Tests.FixtureFactory.TruncatedJpeg();
+                var bytes = FixtureFactory.TruncatedJpeg();
                 var src = Path.Combine(Path.GetTempPath(), "er-trunc.jpg");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-trunc-out.jpg");
                 File.WriteAllBytes(src, bytes);
@@ -95,7 +96,7 @@ internal static class Program
                 var src = Path.Combine(Path.GetTempPath(), "er-idem.jpg");
                 var out1 = Path.Combine(Path.GetTempPath(), "er-idem-1.jpg");
                 var out2 = Path.Combine(Path.GetTempPath(), "er-idem-2.jpg");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.JpegWithExifXmpIccAndComment());
+                File.WriteAllBytes(src, FixtureFactory.JpegWithExifXmpIccAndComment());
                 try
                 {
                     var r1 = JpegMetadataStripper.Strip(src, out1, false, StripProfile.Privacy);
@@ -110,7 +111,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-stuff.jpg");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-stuff-out.jpg");
-                var original = ExifRemover.Tests.FixtureFactory.JpegWithStuffedScanAndMetadata();
+                var original = FixtureFactory.JpegWithStuffedScanAndMetadata();
                 File.WriteAllBytes(src, original);
                 try
                 {
@@ -134,7 +135,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-prog.jpg");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-prog-out.jpg");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.ProgressiveLikeJpegWithExif());
+                File.WriteAllBytes(src, FixtureFactory.ProgressiveLikeJpegWithExif());
                 try
                 {
                     JpegMetadataStripper.Strip(src, outPath, false, StripProfile.Privacy);
@@ -149,7 +150,7 @@ internal static class Program
             () =>
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-ovr.jpg");
-                var original = ExifRemover.Tests.FixtureFactory.JpegWithStuffedScanAndMetadata();
+                var original = FixtureFactory.JpegWithStuffedScanAndMetadata();
                 File.WriteAllBytes(src, original);
                 try
                 {
@@ -167,7 +168,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-png-meta.png");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-png-meta-out.png");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.PngWithTextTimeExifIccp());
+                File.WriteAllBytes(src, FixtureFactory.PngWithTextTimeExifIccp());
                 try
                 {
                     var preInspect = MetadataInspector.Inspect(src);
@@ -190,7 +191,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-png-all.png");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-png-all-out.png");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.PngWithTextTimeExifIccp());
+                File.WriteAllBytes(src, FixtureFactory.PngWithTextTimeExifIccp());
                 try
                 {
                     PngMetadataStripper.Strip(src, outPath, false, StripProfile.AllMetadata);
@@ -206,7 +207,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-png-min2.png");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-png-min2-out.png");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.PngWithTextTimeExifIccp());
+                File.WriteAllBytes(src, FixtureFactory.PngWithTextTimeExifIccp());
                 try
                 {
                     PngMetadataStripper.Strip(src, outPath, false, StripProfile.Minimal);
@@ -220,7 +221,7 @@ internal static class Program
         Test("PngStripper: Truncated input throws, original untouched",
             () =>
             {
-                var bytes = ExifRemover.Tests.FixtureFactory.TruncatedPng();
+                var bytes = FixtureFactory.TruncatedPng();
                 var src = Path.Combine(Path.GetTempPath(), "er-png-trunc.png");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-png-trunc-out.png");
                 File.WriteAllBytes(src, bytes);
@@ -238,7 +239,7 @@ internal static class Program
             {
                 var src = Path.Combine(Path.GetTempPath(), "er-png-idat.png");
                 var outPath = Path.Combine(Path.GetTempPath(), "er-png-idat-out.png");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.PngWithTextTimeExifIccp());
+                File.WriteAllBytes(src, FixtureFactory.PngWithTextTimeExifIccp());
                 try
                 {
                     var srcBytes = File.ReadAllBytes(src);
@@ -257,7 +258,7 @@ internal static class Program
                 var src = Path.Combine(Path.GetTempPath(), "er-png-idem.png");
                 var out1 = Path.Combine(Path.GetTempPath(), "er-png-idem-1.png");
                 var out2 = Path.Combine(Path.GetTempPath(), "er-png-idem-2.png");
-                File.WriteAllBytes(src, ExifRemover.Tests.FixtureFactory.PngWithTextTimeExifIccp());
+                File.WriteAllBytes(src, FixtureFactory.PngWithTextTimeExifIccp());
                 try
                 {
                     PngMetadataStripper.Strip(src, out1, false, StripProfile.Privacy);
@@ -309,10 +310,10 @@ internal static class Program
         Test("Static: format detection works",
             () =>
             {
-                var jpg = ExifRemover.Tests.FixtureFactory.JpegWithExifXmpIccAndComment();
+                var jpg = FixtureFactory.JpegWithExifXmpIccAndComment();
                 if (ImageFormatDetector.Detect(jpg) != ImageFormat.Jpeg)
                     throw new Exception("JPEG not detected");
-                var png = ExifRemover.Tests.FixtureFactory.PngWithTextTimeExifIccp();
+                var png = FixtureFactory.PngWithTextTimeExifIccp();
                 if (ImageFormatDetector.Detect(png) != ImageFormat.Png)
                     throw new Exception("PNG not detected");
                 if (ImageFormatDetector.Detect(new byte[] { 1, 2, 3 }) != ImageFormat.Unknown)
