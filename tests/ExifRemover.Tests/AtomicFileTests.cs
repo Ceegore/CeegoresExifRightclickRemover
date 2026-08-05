@@ -217,18 +217,26 @@ public class AtomicFileTests : IDisposable
         // block is re-throwing. The test: open a file with FileShare.None
         // (exclusive lock), then try to clean it up. The helper must
         // return normally (not throw).
+        //
+        // Platform note: Windows' DeleteFile fails with ERROR_SHARING_VIOLATION
+        // when the file is open with FileShare.None. Linux's unlink succeeds
+        // even on an open file (the file is unlinked from the directory but
+        // the inode persists until the last handle closes). So on Linux the
+        // File.Delete inside the helper actually succeeds and the file is
+        // gone after the test; on Windows the File.Delete throws and the
+        // helper's internal catch swallows it. Either way, the helper must
+        // NOT propagate the exception — the test asserts the primary
+        // contract (no throw) and does NOT assert "file still exists"
+        // because that side effect is platform-dependent.
         var path = Path.Combine(_tempDir, "locked.jpg");
         File.WriteAllBytes(path, new byte[] { 0x01, 0x02 });
 
         // Hold an exclusive lock on the file.
         using var lockHandle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
 
-        // Cleanup must not throw.
+        // Cleanup must not throw, on either platform.
         var ex = Record.Exception(() =>
             AtomicFile.CleanupOrphanedOutput(path, sourcePath: "/dev/null/source.jpg", overwriteSource: false));
         Assert.Null(ex);
-
-        // The file still exists (the lock prevented the delete).
-        Assert.True(File.Exists(path));
     }
 }
