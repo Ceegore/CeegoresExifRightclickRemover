@@ -5,6 +5,49 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.44 — 2026-08-06 — 360° audit round 41 (consolidate 4 PNG signature copies to 1 canonical public constant)
+- **D106** `src/ExifRemover.Engine/ImageFormat.cs` +
+  `src/ExifRemover.Engine/MetadataInspector.cs` +
+  `src/ExifRemover.Engine/PngMetadataStripper.cs` +
+  `verify/Program.cs` — the PNG signature (8 bytes:
+  89 50 4E 47 0D 0A 1A 0A) was duplicated in 4
+  places. The PngMetadataStripper copy was even
+  under a different name (`Signature` not
+  `PngSignature`), making it invisible to a
+  `grep PngSignature` sweep. 4× duplicate is a
+  textbook "module-level constant duplicates are
+  a drift trap" finding. Fix: changed
+  `ImageFormatDetector.PngSignature` to
+  `public static readonly byte[]` (was
+  `private static ReadOnlySpan<byte>` property)
+  and deleted the 3 other copies. The
+  `public` visibility is required so the verifier
+  (a different assembly) can reference the
+  canonical constant. 3 new project-wide
+  source-shape regression tests in
+  `PngSignatureConsolidationTests.cs`:
+  `PngSignature_EngineHasExactlyOneLiteral`
+  (walks all Engine .cs files, asserts the
+  8-byte literal appears in EXACTLY 1 place —
+  pre-fix: 3 occurrences) +
+  `PngSignature_VerifierHasNoLiteral` (asserts
+  the verifier does not contain the literal) +
+  `PngSignature_ImageFormatDetectorConstantIsPublicByteArray`
+  (asserts the canonical declaration is
+  `public static readonly byte[]`).
+- Updated existing
+  `Verifier_IsValidPng_UsesPngSignatureConstant`
+  (M2.20.37 D99) for the D106 consolidation
+  (the verifier's local `PngSignature` field is
+  gone — new assertions pin the absence of the
+  local field + the new
+  `SequenceEqual(ImageFormatDetector.PngSignature)`
+  call pattern + the absence of the inline byte
+  literal in the verifier).
+- xUnit: 199 → 202 tests (+3 for D106). All 202
+  green. SelfTest 17/17. Real-image verifier:
+  ALL CHECKS PASSED.
+
 ## M2.20.43 — 2026-08-06 — 360° audit round 40 (extract Matches(string?) local function in OverlayViewModel.EntryFilter)
 - **D105** `src/ExifRemover.App/OverlayViewModel.cs` —
   `EntryFilter` had 3 inline repetitions of the
