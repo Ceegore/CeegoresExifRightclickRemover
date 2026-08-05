@@ -5,6 +5,47 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.33 — 2026-08-05 — 360° audit round 30 (DRY in SelfTest, extract CountStuffedFf00 + AssertValidJpeg)
+- **D95** `src/ExifRemover.SelfTest/Program.cs` —
+  SelfTest `Program.cs` had two hand-rolled duplications that
+  escaped the prior DRY sweeps because the M2.20.25 D83/D84/D86/
+  D87 sweeps were scoped to Engine code, the M2.20.30 D92 sweep
+  was scoped to stripper code, the M2.20.31 D93 sweep was scoped
+  to App code, and the M2.20.32 D94 sweep was scoped to WPF code.
+  SelfTest is its own project (a console app, not Engine / App /
+  WPF), so the DRY pattern there was never audited.
+  (1) `int Count(ReadOnlySpan<byte> d)` local function
+  byte-identical in 2 test methods ("Stuffed bytes in entropy
+  scan..." L119-125, "Overwrite-in-place preserves stuffed
+  0xFF00 sequences..." L160-166). The function counted 0xFF 0x00
+  byte-stuffing pairs in JPEG entropy-coded data. Pre-fix, the
+  only way to test the count helper was to run a full strip and
+  compare counts before/after — a count regression in the helper
+  (e.g. off-by-one in the loop bound) would surface as a
+  confusing "stuffed 0xFF00 count changed" error.
+  (2) `if (stripped[0] != 0xFF || ... 0xD9) throw new
+  Exception("output not a valid JPEG");` byte-identical 4-
+  comparison JPEG signature check inline in 2 test methods
+  ("Stuffed bytes..." L128-129, "Progressive-style..." L144-145).
+  Post-fix: a single `private static int
+  CountStuffedFf00(ReadOnlySpan<byte> data)` helper and a
+  single `private static void AssertValidJpeg(ReadOnlySpan<byte>
+  data)` helper on the SelfTest Program class. All 4 call
+  sites go through the helpers. The new `AssertValidJpeg`
+  also handles the `data.Length < 4` edge case the inline
+  checks silently missed.
+  1 new self-test entry "Helpers: CountStuffedFf00 counts
+  byte-stuffed 0xFF00 pairs" exercises the helper directly
+  with 5 known inputs. The adversarial check (temporarily
+  break the helper to always return 0) confirmed the direct
+  test catches regressions that the existing 2 integration
+  tests miss silently (both bytes have the same count when
+  the helper is broken, so `Count(after) != Count(original)`
+  is false).
+- SelfTest: 16 → 17 tests (+1 for the new "Helpers" test).
+  xUnit: 134/134 unchanged (D95 only touches SelfTest code).
+  Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.32 — 2026-08-05 — 360° audit round 29 (extract SetBusyState helper to OverlayWindow)
 - **D94** `src/ExifRemover.App/OverlayWindow.xaml.cs` —
   introduced a `private void SetBusyState(bool busy)` helper that
