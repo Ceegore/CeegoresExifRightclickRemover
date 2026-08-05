@@ -137,4 +137,20 @@ public class StripPipelineTests : IDisposable
         Assert.Contains("Unsupported file format", report.Failures[0].Error);
         Assert.True(File.Exists(good), "the source file of the failed entry must remain on disk for inspection");
     }
+
+    [Fact]
+    public void StripResult_HasNoDeadWarningProperty()
+    {
+        // D82 (M2.20.24): the pre-fix code declared a `Warning` property on
+        // StripResult that was never set or read by any caller. The placeholder
+        // survived 18 audit rounds because it was never exercised. We removed
+        // it as dead code. This test pins the contract: a future commit that
+        // re-introduces `Warning` would fail this test, forcing a conscious
+        // decision about whether the property is actually needed (with a
+        // concrete contract for when it's set, when it's read, and what it
+        // means).
+        var resultType = typeof(StripResult);
+        var warningProp = resultType.GetProperty("Warning");
+        Assert.Null(warningProp);
+    }
 }
