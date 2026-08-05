@@ -143,21 +143,36 @@ internal static class Program
     /// </summary>
     private static bool IsValidPng(byte[] b)
     {
-        if (b.Length < 12) return false;
-        // PNG signature: 89 50 4E 47 0D 0A 1A 0A
-        if (b[0] != 0x89 || b[1] != 0x50 || b[2] != 0x4E || b[3] != 0x47) return false;
-        if (b[4] != 0x0D || b[5] != 0x0A || b[6] != 0x1A || b[7] != 0x0A) return false;
+        // The full IEND chunk trailer is 12 bytes: a 4-byte big-endian
+        // length (0 for IEND — IEND has no payload), the 4-byte ASCII
+        // type "IEND", and a 4-byte CRC. A buffer of < 12 bytes cannot
+        // contain the IEND trailer, so the check is moot below that
+        // length. The signature alone is 8 bytes, so the combined minimum
+        // is 8 + 12 = 20 bytes; the L146 check handles both bounds.
+        if (b.Length < 20) return false;
+        // PNG signature: 89 50 4E 47 0D 0A 1A 0A (8 bytes).
+        if (!b.AsSpan(0, 8).SequenceEqual(PngSignature)) return false;
         // IEND: a 4-byte length (0), a 4-byte type ("IEND"), and a 4-byte CRC.
-        // Total trailer is at least 12 bytes from the end. The length field
-        // for IEND is 0 (no payload), so the 4 bytes before "IEND" must be
-        // 0x00 0x00 0x00 0x00.
-        if (b.Length < 12) return false;
+        // The length field for IEND is 0 (no payload), so the 4 bytes before
+        // "IEND" must be 0x00 0x00 0x00 0x00.
         int iendOffset = b.Length - 12;
         if (b[iendOffset] != 0x00 || b[iendOffset + 1] != 0x00 ||
             b[iendOffset + 2] != 0x00 || b[iendOffset + 3] != 0x00) return false;
-        if (b[iendOffset + 4] != 'I' || b[iendOffset + 5] != 'E' ||
-            b[iendOffset + 6] != 'N' || b[iendOffset + 7] != 'D') return false;
+        // IEND type as ASCII. Using a constant string for clarity instead
+        // of 4 individual char comparisons.
+        if (!b.AsSpan(iendOffset + 4, 4).SequenceEqual(IendTypeBytes)) return false;
         // CRC bytes can be anything (the stripper recomputed them).
         return true;
     }
+
+    // PNG signature: 89 50 4E 47 0D 0A 1A 0A (per RFC 2083 / ISO/IEC 15948).
+    // The first 4 bytes are also intentionally chosen to include
+    // high-bit and control characters to detect bad file transfers.
+    private static readonly byte[] PngSignature =
+        { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
+    // IEND chunk type as ASCII bytes ("IEND" = 49 45 4E 44).
+    // Using a byte array (not a string) for the SequenceEqual comparison
+    // against the buffer — strings would require an Encoding round-trip.
+    private static readonly byte[] IendTypeBytes = "IEND"u8.ToArray();
 }
