@@ -5,6 +5,29 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.42 — 2026-08-05 — 360° audit round 39 (move ComputeKeepSet to Engine as KeepSet.ForFormat)
+- **D104** `src/ExifRemover.Engine/KeepSet.cs` (new) +
+  `src/ExifRemover.App/OverlayViewModel.cs` (now 1-line
+  pass-through) — the App's `ComputeKeepSet` was 56 lines
+  of untested pure logic (kept-set builder for each
+  format × profile combination). The pre-fix code lived
+  in the App project (WPF-bound) so the xUnit test
+  project couldn't include its source via `<Compile
+  Include>`. A future refactor that diverged the
+  keep-set from the stripper's actual behavior would
+  silently mis-classify grid entries. Fix: moved the
+  canonical implementation to Engine as
+  `KeepSet.ForFormat(ImageFormat?, StripProfile)`;
+  App becomes a 1-line pass-through delegate. 20 new
+  tests in 2 test classes: 18 direct unit tests in
+  KeepSetTests.cs (9 [Theory] cases + 9 [Fact] tests
+  covering every format × profile combination,
+  Ordinal comparer, null format, cross-format
+  disjointness) + 2 source-shape tests in
+  AppComputeKeepSetShapeTests.cs.
+- xUnit: 178 → 198 tests (+20 for D104). SelfTest:
+  17/17 stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.41 — 2026-08-05 — 360° audit round 38 (extract PngSignature constant in ImageFormatDetector)
 - **D103** `src/ExifRemover.Engine/ImageFormat.cs` —
   the format detector had the PNG signature (8 bytes:
