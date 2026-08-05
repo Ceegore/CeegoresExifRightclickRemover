@@ -309,19 +309,6 @@ public static class JpegMetadataStripper
         }
     }
 
-    private static bool ReadMarker(FileStream input, out byte marker)
-    {
-        // D79: ReadMarker consumes any 0xFF "fill bytes" before the actual marker byte
-        // (the JPEG spec allows arbitrary 0xFF padding between segments). The fill bytes
-        // are significant — a JPEG with 0xFF padding before the EOI marker would
-        // otherwise produce a smaller output and trip the Changed flag for files that
-        // actually didn't change. Return the count via the helper call site (the
-        // single caller below uses a local WriteMarker() to re-emit the fill bytes
-        // before the marker).
-        int fillByteCount;
-        return ReadMarker(input, out marker, out fillByteCount);
-    }
-
     private static bool ReadMarker(FileStream input, out byte marker, out int fillByteCount)
     {
         int b1 = input.ReadByte();

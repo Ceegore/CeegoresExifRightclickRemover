@@ -118,6 +118,49 @@ public class JpegMetadataStripperShapeTests
             "prefix — use the named IccProfileMagic constant with SequenceEqual instead.");
     }
 
+    [Fact]
+    public void JpegStripper_ReadMarker_HasOnlyFillByteCountOverload()
+    {
+        // D107 (M2.20.45): the pre-fix code had TWO `ReadMarker` overloads
+        //   - 1-out-param: `bool ReadMarker(FileStream input, out byte marker)`
+        //   - 2-out-param: `bool ReadMarker(FileStream input, out byte marker, out int fillByteCount)`
+        // The 1-out-param form was the original pre-D79 wrapper. The D79
+        // (M2.20.21) fix added the `out int fillByteCount` overload to
+        // surface the fill-byte count to the segment-walker (so the
+        // stripper could re-emit 0xFF padding before the marker). After
+        // D79, the 1-out-param form was a dead wrapper that just
+        // declared `int fillByteCount;` and called the 2-out-param
+        // version. The single caller in `Strip` (L65) uses the
+        // 2-out-param form directly. R17-2 dead-code finding (same
+        // pattern as D82 dead `Warning` property, D85 dead `_allPaths`
+        // field, D88 dead `_byPath` field). The fix deletes the
+        // 1-out-param wrapper; the canonical 2-out-param overload
+        // remains the only ReadMarker.
+        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
+        path = Path.GetFullPath(path);
+        var stripperPath = Path.Combine(path, "src", "ExifRemover.Engine", "JpegMetadataStripper.cs");
+        Assert.True(File.Exists(stripperPath),
+            $"Cannot find JpegMetadataStripper.cs at {stripperPath}.");
+
+        var src = File.ReadAllText(stripperPath);
+        var stripped = StripComments(src);
+
+        // (1) The dead 1-out-param `ReadMarker` overload must be gone.
+        //     The pre-fix code had `bool ReadMarker(FileStream input,
+        //     out byte marker)` as a separate private static method.
+        //     Post-fix: 0 matches.
+        var deadOverload = System.Text.RegularExpressions.Regex.Matches(
+            stripped, @"bool\s+ReadMarker\s*\(\s*FileStream\s+\w+\s*,\s*out\s+byte\s+\w+\s*\)").Count;
+        Assert.Equal(0, deadOverload);
+
+        // (2) The canonical 2-out-param `ReadMarker` overload is the
+        //     only one. The pre-fix code had 2 overloads (1-out + 2-out);
+        //     post-fix has 1 (2-out).
+        var liveOverload = System.Text.RegularExpressions.Regex.Matches(
+            stripped, @"bool\s+ReadMarker\s*\(\s*FileStream\s+\w+\s*,\s*out\s+byte\s+\w+\s*,\s*out\s+int\s+\w+\s*\)").Count;
+        Assert.Equal(1, liveOverload);
+    }
+
     /// <summary>
     /// Naive comment stripper: removes <c>//</c> line comments and
     /// <c>/* ... */</c> block comments. KEEPS string literal contents
