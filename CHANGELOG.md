@@ -5,6 +5,59 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.27 — 2026-08-05 — 360° audit round 24 (extract `SkipExactly` + dead `_byPath` field)
+- **D87** `src/ExifRemover.Engine/StreamHelpers.cs:SkipExactly` (new)
+  — the pre-fix code declared a private `SkipExactly` method in BOTH
+  `JpegMetadataStripper.cs` and `PngMetadataStripper.cs`. The two
+  copies were nearly identical (same algorithm, same error-message
+  shape) but with a signature difference: the JPEG side took
+  `int count` (because JPEG segLen is uint16, max 65535, so int is
+  sufficient), while the PNG side took `long count` (because PNG
+  chunk length is int32, +4 for the CRC trailer could in theory push
+  past int.MaxValue, and the `new byte[count]` allocation in the
+  non-seekable path would throw on overflow). The PNG side had a
+  `Math.Min(count, int.MaxValue)` clamp to defend against this. Same
+  D83-style DRY-drift risk. Fix: extracted to a shared
+  `StreamHelpers.SkipExactly` that always takes `long count` and
+  always applies the clamp. The JPEG call sites pass
+  `(long)payloadLen` (implicit widening from int to long is free).
+  The post-fix helper is one implementation instead of two, with the
+  same trust-but-verify bounds check (D65), the same error-message
+  shape, and the same overflow defense.
+  New regression tests in `StreamHelpersTests.cs`:
+  `SkipExactly_SeekableStream_AdvancesPositionByCount` (the basic
+  seek case),
+  `SkipExactly_SeekableStream_CountPastEnd_Throws` (the bounds-check
+  case — D65 contract),
+  `SkipExactly_NonSeekableStream_AdvancesPositionByCount` (the
+  read-loop case via a `NonSeekableStream` wrapper),
+  `SkipExactly_NonSeekableStream_StreamShorterThanCount_Throws`
+  (the read-loop bounds case),
+  `SkipExactly_ContextTagAppearsInExceptionMessage` (the
+  format-tag-in-message contract),
+  `SkipExactly_ZeroCount_NoOp` (the zero-skip boundary),
+  `SkipExactly_LargeCount_NearIntMaxValue_DoesNotOverflowBufferAllocation`
+  (the `int.MaxValue` clamp contract — a count of
+  `int.MaxValue + 1L` against a 10-byte stream must throw the
+  bounds-check error, NOT OOM trying to allocate the buffer).
+- **D88** `src/ExifRemover.App/OverlayViewModel.cs` — the pre-fix
+  code declared a `private readonly Dictionary<string, FileEntryViewModel> _byPath = new(StringComparer.OrdinalIgnoreCase);`
+  field that was used in the constructor for the D78 case-insensitive
+  dedup (`ContainsKey` + indexer-set), but never read anywhere else.
+  Same R17-2 (dead field) pattern as D85 (`_allPaths`) and D82
+  (`StripResult.Warning`): a private field that survived multiple
+  audit rounds because it was never exercised outside the
+  constructor. The fix moved the dictionary into the constructor as
+  a local `seen` variable. The `OrdinalIgnoreCase` comparer is
+  preserved (Windows path semantics: "FOO.jpg" and "foo.jpg" refer
+  to the same file).
+  New source-shape regression test
+  `OverlayViewModelShapeTests.OverlayViewModel_DoesNotDeclareDeadByPathField`
+  reads the source file as text, strips comments, and asserts the
+  field name is NOT present.
+- xUnit: 94 → 102 tests (+8 for D87+D88). SelfTest: 16/16 stable.
+- Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.26 — 2026-08-05 — 360° audit round 23 (extract `CleanupOrphanedOutput` + remove dead `_allPaths` field)
 - **D85** `src/ExifRemover.App/OverlayViewModel.cs` — the pre-fix code
   declared a `private readonly List<string> _allPaths;` field that was

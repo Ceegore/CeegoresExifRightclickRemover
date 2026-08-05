@@ -44,6 +44,34 @@ public class OverlayViewModelShapeTests
         Assert.DoesNotContain("_allPaths", stripped);
     }
 
+    [Fact]
+    public void OverlayViewModel_DoesNotDeclareDeadByPathField()
+    {
+        // D88 (M2.20.27): the pre-fix code declared a
+        //   `private readonly Dictionary<string, FileEntryViewModel> _byPath = new(...);`
+        // field on OverlayViewModel. The field was used in the constructor
+        // for the D78 case-insensitive dedup (ContainsKey + indexer-set),
+        // but never read anywhere else. Same R17-2 (dead field) pattern as
+        // D85 (`_allPaths`) and D82 (`StripResult.Warning`): a private field
+        // that survived multiple audit rounds because it was never exercised
+        // outside the constructor. The fix moved the dictionary into the
+        // constructor as a local `seen` variable. This test pins the
+        // contract: a future commit that re-introduces the field as a
+        // private member would fail this test, forcing a conscious decision.
+        var path = LocateOverlayViewModel();
+        Assert.True(File.Exists(path),
+            $"Cannot find OverlayViewModel.cs at {path}.");
+
+        var source = File.ReadAllText(path);
+        var stripped = StripComments(source);
+
+        // The field declaration pattern: `private ... _byPath`. The
+        // constructor's local `seen` is fine (a different name). We assert
+        // the specific field name is NOT present as a private member
+        // declaration.
+        Assert.DoesNotContain("_byPath", stripped);
+    }
+
     private static string LocateOverlayViewModel()
     {
         var dir = AppContext.BaseDirectory;
