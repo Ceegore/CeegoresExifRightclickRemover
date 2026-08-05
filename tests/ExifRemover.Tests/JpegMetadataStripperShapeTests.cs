@@ -161,6 +161,49 @@ public class JpegMetadataStripperShapeTests
         Assert.Equal(1, liveOverload);
     }
 
+    [Fact]
+    public void JpegStripper_NoLocalCopyExactlyHelper()
+    {
+        // D108 (M2.20.46): the pre-fix code had a private static
+        //   `CopyExactly(Stream src, Stream dst, int count)`
+        // in JpegMetadataStripper.cs. The helper was used 2x in the
+        // segment-walker to copy segment payloads verbatim (after the
+        // 0xFF marker + 2-byte length, the payload bytes go through).
+        // The private helper survived 26 audit rounds (M2.20.20 →
+        // M2.20.45) because it was scoped to a single file. The D108
+        // fix moves it to `ExifRemover.Engine.StreamHelpers.CopyExactly`
+        // (matching the D83 `ReadExact` + D87 `SkipExactly` + D92
+        // `ReadUpTo` + D98 `CountStuffedFf00` pattern of shared
+        // stream-I/O helpers). The 2 call sites now use
+        // `StreamHelpers.CopyExactly(input, output, payloadLen, "JPEG")`.
+        // This test pins the post-D108 contract: a regression that
+        // re-introduces the local helper would fail.
+        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
+        path = Path.GetFullPath(path);
+        var stripperPath = Path.Combine(path, "src", "ExifRemover.Engine", "JpegMetadataStripper.cs");
+        Assert.True(File.Exists(stripperPath),
+            $"Cannot find JpegMetadataStripper.cs at {stripperPath}.");
+
+        var src = File.ReadAllText(stripperPath);
+        var stripped = StripComments(src);
+
+        // (1) The local `private static void CopyExactly(Stream, Stream, int)`
+        //     method is gone. The D108 fix deleted it; the canonical
+        //     implementation lives in `StreamHelpers.CopyExactly`.
+        //     Pre-fix: 1 match. Post-fix: 0 matches.
+        var localHelper = System.Text.RegularExpressions.Regex.Matches(
+            stripped, @"private\s+static\s+void\s+CopyExactly\s*\(\s*Stream\s+\w+\s*,\s*Stream\s+\w+\s*,\s*int\s+\w+\s*\)").Count;
+        Assert.Equal(0, localHelper);
+
+        // (2) The 2 call sites in the segment-walker use
+        //     `StreamHelpers.CopyExactly(input, output, payloadLen, "JPEG")`.
+        //     Pre-fix: 0 matches (the call sites used the bare
+        //     `CopyExactly(...)` form). Post-fix: 2 matches.
+        var sharedCalls = System.Text.RegularExpressions.Regex.Matches(
+            stripped, @"StreamHelpers\.CopyExactly\s*\(\s*input\s*,\s*output\s*,\s*payloadLen\s*,\s*""JPEG""\s*\)").Count;
+        Assert.Equal(2, sharedCalls);
+    }
+
     /// <summary>
     /// Naive comment stripper: removes <c>//</c> line comments and
     /// <c>/* ... */</c> block comments. KEEPS string literal contents
