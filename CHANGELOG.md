@@ -5,6 +5,37 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.35 — 2026-08-05 — 360° audit round 32 (drop ExifRemover.Tests namespace prefix in SelfTest)
+- **D97** `src/ExifRemover.SelfTest/Program.cs` —
+  project-wide sweep for verbose namespace prefixes found
+  16 occurrences of `ExifRemover.Tests.FixtureFactory.X()`
+  in SelfTest (the same R16 DRY pattern as M2.20.25/30/32/33
+  D83/D84/D86/D87/D92/D93/D94/D95, but this time scoped to
+  SelfTest and finding a different shape of duplication —
+  a verbose fully-qualified namespace prefix). The SelfTest
+  project embeds `FixtureFactory.cs` via `<Compile Include>`
+  (so the class is in the `ExifRemover.Tests` namespace and
+  is internal-accessible from the SelfTest assembly), but
+  the file lacked the corresponding `using ExifRemover.Tests;`
+  directive. The fix adds the using and replaces all 16
+  prefixed calls with the bare `FixtureFactory.X()` form.
+  Mechanical change (no behavior change), but the
+  readability improvement is real: the call sites are
+  shorter and the namespace membership is explicit at the
+  top of the file.
+  1 new source-shape test in
+  `tests/ExifRemover.Tests/SelfTestShapeTests.cs`: 3-part
+  check (the `using ExifRemover.Tests;` directive must be
+  present in the comment-stripped source; the verbose
+  `ExifRemover.Tests.FixtureFactory.` prefix must NOT
+  appear; at least 1 bare `FixtureFactory.X()` call must
+  exist as a sanity check). The project-wide sweep is the
+  M2.20.33 D95 future-round hint ("any R-series DRY audit
+  should include a project-wide sweep in addition to the
+  per-region audit") implemented.
+- xUnit: 135 → 136 tests (+1 for D97). SelfTest: 17/17
+  stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.34 — 2026-08-05 — 360° audit round 31 (rephrase post-strip status text)
 - **D96** `src/ExifRemover.App/OverlayViewModel.cs:422` —
   rephrased the post-strip status text parenthetical from
