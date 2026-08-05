@@ -417,9 +417,29 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         // If a pre-strip snapshot is active, the snapshot is the source of truth.
         if (PreStripSnapshots.TryGetValue(SelectedFile.Path, out var snap))
         {
+            // D96: rephrase the parenthetical from "(last strip removed all)" to
+            // "(pre-strip snapshot)". The pre-fix wording was misleading when:
+            //   (1) a filter is active — VisibleEntryCount < snap.Count, so the
+            //       user sees fewer rows than the snapshot has. The phrase
+            //       "last strip removed all" doesn't explain the filter, and a
+            //       user might wonder "if the strip removed all, why are there
+            //       Y entries?" The answer is: the grid is showing the pre-strip
+            //       snapshot, not the post-strip state.
+            //   (2) the keep-set is non-empty (e.g. Privacy profile keeps JFIF).
+            //       "Removed all" reads as "removed every metadata entry", but
+            //       the strip only removed the non-keep-set entries; the keep-set
+            //       entries would NOT have been removed. The pre-fix wording
+            //       implied the strip wiped everything, which is incorrect.
+            // The new wording "(pre-strip snapshot)" is terse and accurate: the
+            // grid is showing the pre-strip entries (all marked "Would be
+            // removed" because the snapshot is the source of truth, and at the
+            // moment of snapshot capture every entry's wouldKeep flag was
+            // false). The user infers the strip succeeded from the grid state
+            // (every row says "Would be removed") without a misleading claim
+            // about WHAT was removed.
             StatusText = snap.Count == 0
                 ? "No metadata in this file."
-                : $"{VisibleEntryCount} of {snap.Count} entries shown (last strip removed all).";
+                : $"{VisibleEntryCount} of {snap.Count} entries shown (pre-strip snapshot).";
             return;
         }
         var total = SelectedFile.Inspection?.Entries.Count ?? 0;
