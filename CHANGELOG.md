@@ -5,6 +5,30 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.43 — 2026-08-06 — 360° audit round 40 (extract Matches(string?) local function in OverlayViewModel.EntryFilter)
+- **D105** `src/ExifRemover.App/OverlayViewModel.cs` —
+  `EntryFilter` had 3 inline repetitions of the
+  same null-safe case-insensitive `Contains` check
+  (`s?.Contains(_filterText,
+  StringComparison.OrdinalIgnoreCase) ?? false`),
+  one per field (`Name`, `Value`, `Group`). The
+  3-rep is a textbook DRY violation. Extracted a
+  local function `Matches(string? s) => ...` that
+  captures `_filterText` automatically, so the 3
+  callers become `Matches(row.Entry.Name) ||
+  Matches(row.Entry.Value) ||
+  Matches(row.Entry.Group)`. Behavior is unchanged.
+  1 new test in
+  `tests/ExifRemover.Tests/OverlayViewModelShapeTests.cs`:
+  source-shape regression test that pins 3
+  contracts (local function declared exactly once,
+  inline `Contains(_filterText, ...)` pattern
+  appears exactly once, 3 callers all delegate to
+  `Matches(...)`).
+- xUnit: 198 → 199 tests (+1 for D105). All 199
+  green. No engine / API / format-detection /
+  stripper code touched.
+
 ## M2.20.42 — 2026-08-05 — 360° audit round 39 (move ComputeKeepSet to Engine as KeepSet.ForFormat)
 - **D104** `src/ExifRemover.Engine/KeepSet.cs` (new) +
   `src/ExifRemover.App/OverlayViewModel.cs` (now 1-line
