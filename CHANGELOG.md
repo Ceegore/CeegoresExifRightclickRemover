@@ -5,6 +5,35 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.28 — 2026-08-05 — 360° audit round 25 (AboutWindow hyperlink: show MessageBox on failure)
+- **D89** `src/ExifRemover.App/AboutWindow.xaml.cs:Hyperlink_RequestNavigate`
+  — the pre-fix code had a bare `catch { }` that silently
+  swallowed any exception from `Process.Start`. This is the
+  R17-3 pattern (silent error swallow on a user-facing path):
+  a user clicks the "MetadataExtractor" hyperlink, the
+  launch fails (e.g. no default browser configured, AV
+  blocked the launch, malformed URI), and the user gets no
+  feedback. The fix catches the specific `Exception` class
+  and shows a `MessageBox` with the error message and a
+  hint to configure a default browser. The user gets
+  actionable feedback instead of wondering why nothing
+  happened.
+  New source-shape regression test
+  `AboutWindowShapeTests.AboutWindow_HyperlinkRequestNavigate_DoesNotSwallowExceptionSilently`
+  reads `AboutWindow.xaml.cs` as text, strips comments AND
+  string literals (R16 lesson), and uses the regex
+  `catch\s*\{` to detect any bare-catch pattern. A future
+  commit that re-introduces the bare `catch { }` would
+  fail the test, forcing a conscious decision. (The earlier
+  attempt with `catch\s*(?!\()` failed due to regex
+  backtracking — see the test's inline comment for the
+  detailed analysis. The final regex `catch\s*\{` is
+  immune to the backtracking issue because `\s` only
+  matches whitespace, so the engine cannot backtrack past
+  the `(` in `catch (Exception ex)`.)
+- xUnit: 102 → 103 tests (+1 for D89). SelfTest: 16/16 stable.
+- Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.27 — 2026-08-05 — 360° audit round 24 (extract `SkipExactly` + dead `_byPath` field)
 - **D87** `src/ExifRemover.Engine/StreamHelpers.cs:SkipExactly` (new)
   — the pre-fix code declared a private `SkipExactly` method in BOTH
