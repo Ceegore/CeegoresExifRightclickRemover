@@ -8,7 +8,6 @@ public static class JpegMetadataStripper
 
     public static StripResult Strip(string sourcePath, string outputPath, bool overwriteSource, StripProfile profile)
     {
-        long originalSize = new FileInfo(sourcePath).Length;
         int dropped = 0;
         bool keepIcc = profile == StripProfile.Minimal;
         bool keepJfif = true;
@@ -20,6 +19,16 @@ public static class JpegMetadataStripper
         FileStream? input = null;
         try
         {
+            // D72: read the original size INSIDE the try block so a missing/inaccessible
+            // file produces a single FileNotFoundException from FileInfo with a clear
+            // message ("Could not find file 'foo.jpg'.") and lets the catch block run
+            // its cleanup. The pre-fix code computed originalSize BEFORE the try, so
+            // a race-condition "file deleted between PathFilter.FileExists and Strip"
+            // threw FileNotFoundException outside the catch — the temp output file
+            // (if any was created by NextNonClashingPath) was orphaned instead of
+            // cleaned up. Strip is still expected to throw; we just want the cleanup
+            // path to run too.
+            long originalSize = new FileInfo(sourcePath).Length;
             input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
 
             Span<byte> header = stackalloc byte[2];

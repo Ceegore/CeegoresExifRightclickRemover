@@ -14,7 +14,6 @@ public static class PngMetadataStripper
 
     public static StripResult Strip(string sourcePath, string outputPath, bool overwriteSource, StripProfile profile)
     {
-        long originalSize = new FileInfo(sourcePath).Length;
         int dropped = 0;
 
         string actualOutputPath = overwriteSource
@@ -27,6 +26,11 @@ public static class PngMetadataStripper
         FileStream? input = null;
         try
         {
+            // D72: read the original size INSIDE the try block so a missing/inaccessible
+            // file produces a single FileNotFoundException with a clear message and
+            // lets the catch block run its cleanup. See JpegMetadataStripper.Strip
+            // for the full rationale — same pattern, same family of bug.
+            long originalSize = new FileInfo(sourcePath).Length;
             input = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
 
             Span<byte> sig = stackalloc byte[8];
