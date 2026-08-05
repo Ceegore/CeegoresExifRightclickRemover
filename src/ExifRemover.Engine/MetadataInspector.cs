@@ -279,6 +279,14 @@ internal static class PngChunkProbe
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
     };
 
+    // PNG chunk type constants (4-byte ASCII strings per the PNG spec). The
+    // pre-fix code allocated a string per chunk (`new string(new[] { ... })`)
+    // and compared strings. The D101 (M2.20.39) fix uses byte comparison
+    // against named constants, matching the PngMetadataStripper pattern.
+    private static ReadOnlySpan<byte> ExifBytes => "eXIf"u8;
+    private static ReadOnlySpan<byte> HistBytes => "hIST"u8;
+    private static ReadOnlySpan<byte> IendBytes => "IEND"u8;
+
     public static void ProbeForMissingEntries(string path, List<MetadataEntry> sink)
     {
         // Only add an entry if MetadataExtractor didn't already surface one. The gaps
@@ -313,9 +321,15 @@ internal static class PngChunkProbe
 
                 int length = (header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3];
                 if (length < 0 || length > int.MaxValue) return; // malformed
-                var type = new string(new[] { (char)header[4], (char)header[5], (char)header[6], (char)header[7] });
+                // D101 (M2.20.39): use a span over the 4 type bytes directly
+                // instead of allocating a string per chunk. The pre-fix code
+                // did `new string(new[] { (char)header[4], ... })` per chunk,
+                // allocating a string and 4 boxed char objects per iteration
+                // (every PNG chunk). The byte-comparison approach is allocation-
+                // free and matches the PngMetadataStripper pattern.
+                var typeSpan = header.Slice(4, 4);
 
-                if (type == "eXIf")
+                if (typeSpan.SequenceEqual(ExifBytes))
                 {
                     sink.Add(new MetadataEntry(
                         MetadataGroups.PngExif,
@@ -331,7 +345,7 @@ internal static class PngChunkProbe
                 // way to know hIST exists or that it would be removed. Surface it here so the
                 // grid shows it; the keep-set (PNGHIST, Minimal-only) marks it "Would be
                 // removed" under Privacy/AllMetadata and "Would be kept" under Minimal.
-                if (type == "hIST")
+                if (typeSpan.SequenceEqual(HistBytes))
                 {
                     sink.Add(new MetadataEntry(
                         MetadataGroups.PngHist,
@@ -346,7 +360,7 @@ internal static class PngChunkProbe
                 if (fs.Position + skip > fs.Length) return;
                 fs.Seek(skip, SeekOrigin.Current);
 
-                if (type == "IEND") return;
+                if (typeSpan.SequenceEqual(IendBytes)) return;
             }
         }
         catch
