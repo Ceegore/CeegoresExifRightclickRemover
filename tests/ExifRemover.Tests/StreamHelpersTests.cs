@@ -333,6 +333,95 @@ public class StreamHelpersTests
         Assert.Contains("during segment skip", ex.Message);
     }
 
+    // ====================================================================
+    // CountStuffedFf00 — D98 (M2.20.36)
+    // ====================================================================
+    // The pre-fix code had a hand-rolled `int CountStuffed(byte[] b)` (or
+    // a local function with the same body) in 4 locations: verify/Program.cs
+    // (CountStuffed), src/ExifRemover.SelfTest/Program.cs (CountStuffedFf00,
+    // added in M2.20.33 D95), and 2 local functions in JpegStripperTests.cs.
+    // The M2.20.33 D95 audit found 2 sites in SelfTest but missed the
+    // verifier and the xUnit tests. The M2.20.36 project-wide sweep
+    // promoted the helper to StreamHelpers and replaced all 4 sites.
+    //
+    // The SelfTest has a direct test for the helper, but the SelfTest is a
+    // console app — not the xUnit test project. These xUnit tests pin the
+    // helper's contract in the test project that's actually wired into CI.
+    // The pre-M2.20.36 local copies in JpegStripperTests.cs had no direct
+    // test coverage; the test was an end-to-end stripper run that compared
+    // stuffed-byte counts before/after, which would silently pass with a
+    // broken helper (the broken helper would return the same wrong count
+    // for both source and output). Same M2.20.33 D95 lesson: shared helpers
+    // need direct unit tests, not just integration coverage.
+
+    [Fact]
+    public void CountStuffedFf00_EmptySpan_ReturnsZero()
+    {
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(ReadOnlySpan<byte>.Empty));
+    }
+
+    [Fact]
+    public void CountStuffedFf00_SingleByte_ReturnsZero()
+    {
+        // A single 0xFF has no following byte to pair with — must NOT count.
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(new byte[] { 0xFF }));
+    }
+
+    [Fact]
+    public void CountStuffedFf00_FollowedByNonZeroByte_ReturnsZero()
+    {
+        // 0xFF followed by anything other than 0x00 is a real marker, not
+        // a byte-stuffing escape — must NOT count.
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(new byte[] { 0xFF, 0xAB }));
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(new byte[] { 0xFF, 0xDA })); // SOS marker
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(new byte[] { 0xFF, 0xD9 })); // EOI marker
+    }
+
+    [Fact]
+    public void CountStuffedFf00_InterleavedPairs_ReturnsExactCount()
+    {
+        // 3 stuffed pairs interleaved with non-stuffed bytes.
+        var data = new byte[] { 0xFF, 0x00, 0xAB, 0xCD, 0xFF, 0x00, 0xEF, 0xFF, 0x00, 0x12 };
+        Assert.Equal(3, StreamHelpers.CountStuffedFf00(data));
+    }
+
+    [Fact]
+    public void CountStuffedFf00_TrailingFfWithNoFollowingByte_DoesNotOvercount()
+    {
+        // Trailing 0xFF with no following byte must not count (it has no
+        // pair to form). The pre-fix local functions had a `data.Length - 1`
+        // loop bound that naturally handles this; this test pins the bound.
+        var data = new byte[] { 0xFF, 0x00, 0xFF };
+        Assert.Equal(1, StreamHelpers.CountStuffedFf00(data));
+    }
+
+    [Fact]
+    public void CountStuffedFf00_AllOnes_ReturnsZero()
+    {
+        // No 0x00 byte at all — no stuffed pairs possible.
+        var data = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(data));
+    }
+
+    [Fact]
+    public void CountStuffedFf00_AllZeros_ReturnsZero()
+    {
+        // No 0xFF byte at all — no stuffed pairs possible.
+        var data = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00 };
+        Assert.Equal(0, StreamHelpers.CountStuffedFf00(data));
+    }
+
+    [Fact]
+    public void CountStuffedFf00_OverlappingCandidates_OnlyCountsFf00Not00Ff()
+    {
+        // Edge case: `0x00 0xFF 0x00` — the middle 0xFF is followed by 0x00
+        // (count it), but the trailing 0x00 has no following 0xFF (don't
+        // count it). The total is 1, not 2 (which would be the case if
+        // the loop counted every 0x00 followed by 0xFF).
+        var data = new byte[] { 0x00, 0xFF, 0x00 };
+        Assert.Equal(1, StreamHelpers.CountStuffedFf00(data));
+    }
+
     /// <summary>
     /// Test helper: a Stream wrapper that always reports <c>CanSeek = false</c>,
     /// so the SkipExactly helper takes the read-loop path even when the

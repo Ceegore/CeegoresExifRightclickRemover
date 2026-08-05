@@ -84,6 +84,47 @@ internal static class StreamHelpers
     }
 
     /// <summary>
+    /// Counts the number of <c>0xFF 0x00</c> byte-stuffing pairs in
+    /// <paramref name="data"/>. JPEG entropy-coded segments use
+    /// <c>0xFF 0x00</c> as a byte-stuffing escape for any <c>0xFF</c> byte
+    /// that appears in the bitstream (so a real marker <c>0xFF xx</c> can
+    /// never be confused with raw data). The stripper's "stuffed bytes
+    /// preserved" tests count these pairs before and after a strip to
+    /// verify the stripper didn't accidentally drop or duplicate any.
+    /// The verifier emits a stuffed-byte count for input and output so the
+    /// Python harness can confirm entropy-region byte preservation.
+    ///
+    /// D98 (M2.20.36): the pre-fix code had a hand-rolled
+    /// <c>int CountStuffed(byte[] b)</c> (or local function with the same
+    /// body) in 4 locations:
+    /// <list type="bullet">
+    ///   <item>verify/Program.cs: <c>CountStuffed</c> private static</item>
+    ///   <item>src/ExifRemover.SelfTest/Program.cs: <c>CountStuffedFf00</c>
+    ///     private static (the M2.20.33 D95 extraction — found 2 sites in
+    ///     SelfTest, missed the verifier and the xUnit tests)</item>
+    ///   <item>tests/ExifRemover.Tests/JpegStripperTests.cs: 2 local
+    ///     functions inside test methods (L377 and L435)</item>
+    /// </list>
+    /// All 4 copies were byte-identical except for the parameter type
+    /// (some took <c>byte[]</c>, others took <c>ReadOnlySpan&lt;byte&gt;</c>
+    /// — <c>byte[]</c> is implicitly convertible to <c>ReadOnlySpan&lt;byte&gt;</c>,
+    /// so a single <c>ReadOnlySpan&lt;byte&gt;</c> signature covers all 4
+    /// call sites). The M2.20.33 D95 audit was scoped to SelfTest and
+    /// missed the other 3 sites — the M2.20.36 project-wide sweep found
+    /// them. This is the same R16 DRY-drift pattern as D83/D84/D86/D87/
+    /// D92/D95/D97: a future contributor who updates the count algorithm
+    /// (e.g. uses a SIMD-accelerated scan, adds a 0xFFFF 0x0000 sentinel
+    /// check) would have to remember to update all 4 copies.
+    /// </summary>
+    public static int CountStuffedFf00(ReadOnlySpan<byte> data)
+    {
+        int n = 0;
+        for (int i = 0; i < data.Length - 1; i++)
+            if (data[i] == 0xFF && data[i + 1] == 0x00) n++;
+        return n;
+    }
+
+    /// <summary>
     /// Skips exactly <paramref name="count"/> bytes from <paramref name="s"/>.
     /// On a seekable stream, uses <c>Stream.Seek</c> (O(1)) and trust-but-verify
     /// the count doesn't run past the end of the stream. On a non-seekable
