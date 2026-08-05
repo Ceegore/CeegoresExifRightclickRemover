@@ -9,7 +9,14 @@ public sealed class StripResult
     public required long OutputSizeBytes { get; init; }
     public required int DroppedSegments { get; init; }
     public required bool Changed { get; init; }
-    public string? Warning { get; init; }
+
+    // D82 (M2.20.24): a pre-fix `Warning` property was declared here but never set
+    // or read by any caller. It was a placeholder for "warning that the strip
+    // succeeded but with caveats" (e.g. "ICC profile was malformed but we
+    // kept it"). The placeholder was added in the initial import (605a2d0)
+    // and survived 18 audit rounds because it was never exercised. The
+    // placeholder has been removed; if a real warning is ever needed,
+    // add it back as a concrete property with a specific contract.
 
     public long SavedBytes => Math.Max(0, OriginalSizeBytes - OutputSizeBytes);
 }

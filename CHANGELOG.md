@@ -5,6 +5,34 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.24 — 2026-08-05 — 360° audit round 21 (dead `Warning` property removal)
+- **D82** `src/ExifRemover.Engine/StripPipeline.cs:StripResult` —
+  the pre-fix code declared a `Warning` property on `StripResult`
+  that was never set or read by any caller. It was a placeholder
+  for "warning that the strip succeeded but with caveats" (e.g.
+  "ICC profile was malformed but we kept it"). The placeholder was
+  added in the initial import (commit `605a2d0`) and survived 18
+  audit rounds because it was never exercised. The placeholder has
+  been removed; if a real warning is ever needed, add it back as a
+  concrete property with a specific contract (when it's set, when
+  it's read, what it means, and which caller consumes it). A
+  postmortem comment block now lives in the source where the
+  property used to be, so a future contributor who goes looking
+  for it understands the history. The dead property was a
+  refactor-drift risk: a future commit could have set it from
+  one place and read it from a different place, with neither
+  the production code path nor the tests exercising the
+  contract — the bug would only surface at runtime.
+  New regression test
+  `StripPipelineTests.StripResult_HasNoDeadWarningProperty` uses
+  reflection to assert that the `Warning` property does NOT
+  exist on `StripResult` — a future commit that re-introduces
+  the dead property would fail this test loudly, forcing a
+  conscious decision about whether the property is actually
+  needed (with a concrete contract for when it's set, when it's
+  read, and what it means).
+- xUnit: 78 → 79 tests (+1 for D82). SelfTest: 16/16 stable.
+
 ## M2.20.23 — 2026-08-05 — 360° audit round 20 (APP14 / CMYK color shift)
 - **D81** `src/ExifRemover.Engine/JpegMetadataStripper.cs:ShouldDrop` —
   the pre-fix code dropped APP14 (Adobe marker) along with all other
