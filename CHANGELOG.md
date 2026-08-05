@@ -5,6 +5,39 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.32 — 2026-08-05 — 360° audit round 29 (extract SetBusyState helper to OverlayWindow)
+- **D94** `src/ExifRemover.App/OverlayWindow.xaml.cs` —
+  introduced a `private void SetBusyState(bool busy)` helper that
+  toggles the three action buttons (`RemoveButton`, `CancelButton`,
+  `ReInspectButton`) as a single unit. The pre-fix file had 7
+  hand-rolled multi-button sites (3 disable + 4 enable) = 21
+  identical 3-line blocks. Forgetting one of the three buttons at
+  a new transition site is a silent UX bug (e.g. `RemoveButton`
+  stays enabled mid-inspect and races the snapshot capture that
+  D11 protects against; a future button added to the action bar
+  would silently miss the busy-state). All 7 sites now go through
+  the helper. The 2 single-button `ReInspectButton` sites in
+  `ReInspectButton_Click` stay as direct assignments because they
+  isolate the ReInspect operation only (Remove and Cancel remain
+  enabled during re-inspect so the user can cancel a long
+  re-inspect or start a strip) — that is a deliberate UX choice,
+  not a DRY violation. The helper deliberately does NOT touch
+  `_vm.IsBusy` because the progress bar bound to `IsBusy` shows
+  during a real operation but should NOT show over a fatal error
+  message (`ShowFatal`); the two concerns are independent, and
+  callers set `_vm.IsBusy` on the adjacent line when starting or
+  ending a real operation.
+  2 new source-shape tests in
+  `tests/ExifRemover.Tests/OverlayWindowShapeTests.cs`:
+  count-assert (`RemoveButton`=1, `CancelButton`=1,
+  `ReInspectButton`=3) + helper-existence assertion.
+  The count test is the adversarial verification: a temporary
+  4th `RemoveButton.IsEnabled` site inside `CancelButton_Click`
+  failed the test with a clear "Found 2" message; reverted,
+  passes again.
+- xUnit: 132 → 134 tests (+2 for D94). SelfTest: 16/16 stable.
+  Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.31 — 2026-08-05 — 360° audit round 28 (extract KeepSetKey to Engine)
 - **D93** `src/ExifRemover.Engine/KeepSetKey.cs` (new) —
   extracted `OverlayViewModel.GetChunkKey` (a 18-branch
