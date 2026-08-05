@@ -5,6 +5,29 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.40 — 2026-08-05 — 360° audit round 37 (move FormatBytes to Engine + add GB case + InvariantCulture + negative-value guard)
+- **D102** `src/ExifRemover.Engine/Formatting.cs` (new) +
+  `src/ExifRemover.App/Formatting.cs` (now 1-line
+  pass-through) — the App's `FormatBytes` had 4 issues
+  that survived 32 audit rounds: (1) no GB case
+  (1.5 GB rendered as "1500.00 MB"); (2) no
+  negative-value guard (signed-int overflow rendered
+  as "-5 B"); (3) culture-dependent decimal separator
+  (German locale rendered as "1,5 KB" with `,`); (4)
+  not unit-testable (lived in App project, WPF-bound,
+  so xUnit couldn't include via `<Compile Include>`).
+  Fix: moved canonical implementation to Engine
+  project + added GB case + InvariantCulture +
+  negative-value guard. App's Formatting becomes a
+  one-line pass-through delegate. 19 new tests in
+  2 test classes: 17 direct unit tests in
+  FormattingTests.cs (12 theory rows + 3 negative
+  cases + 1 GB Fact) + 2 source-shape tests in
+  AppFormattingShapeTests.cs (App must be
+  pass-through, Engine must have GB case).
+- xUnit: 157 → 176 tests (+19 for D102). SelfTest:
+  17/17 stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.39 — 2026-08-05 — 360° audit round 36 (extract PNG chunk-type constants + eliminate per-chunk string allocation in PngChunkProbe)
 - **D101** `src/ExifRemover.Engine/PngMetadataStripper.cs` +
   `src/ExifRemover.Engine/MetadataInspector.cs` —
