@@ -12,6 +12,16 @@ public enum ImageFormat
 
 public static class ImageFormatDetector
 {
+    // D103 (M2.20.41): the pre-fix code had the PNG signature
+    // (8 bytes: 89 50 4E 47 0D 0A 1A 0A) hardcoded as 8 inline byte
+    // comparisons. The same D99 / D100 / D101 pattern (extract named
+    // constants + SequenceEqual) is applied here. The M2.20.37 D99 fix
+    // extracted the PNG signature in the verifier; the M2.20.39 D101
+    // fix extracted it in MetadataInspector.PngChunkProbe and in
+    // PngMetadataStripper. The D103 fix does the same here.
+    private static ReadOnlySpan<byte> PngSignature => new byte[]
+        { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
     public static ImageFormat Detect(ReadOnlySpan<byte> header)
     {
         if (header.Length >= 3
@@ -22,9 +32,7 @@ public static class ImageFormatDetector
             return ImageFormat.Jpeg;
         }
 
-        if (header.Length >= 8
-            && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47
-            && header[4] == 0x0D && header[5] == 0x0A && header[6] == 0x1A && header[7] == 0x0A)
+        if (header.Length >= 8 && header.SequenceEqual(PngSignature))
         {
             return ImageFormat.Png;
         }
