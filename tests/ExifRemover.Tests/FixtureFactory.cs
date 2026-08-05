@@ -186,6 +186,44 @@ internal static class FixtureFactory
     }
 
     /// <summary>
+    /// JPEG with an APP14 (Adobe) segment. APP14 carries the color-transform flag that
+    /// identifies a JPEG's color space (e.g. YCbCr for normal JPEGs, YCCK for CMYK
+    /// JPEGs). D81 in M2.20.23: the pre-fix stripper dropped APP14 along with all other
+    /// APPn segments, which caused a visible color shift on CMYK JPEGs after stripping.
+    /// The catalog contract is "Privacy keeps color management" — every other color hint
+    /// (JFIF, ICC, gAMA, cHRM, sRGB) is kept under at least one profile. The fix keeps
+    /// APP14 under all profiles so the catalog contract is honored for CMYK JPEGs too.
+    /// </summary>
+    public static byte[] JpegWithApp14()
+    {
+        // APP14 layout: marker (2 bytes) + length (2 bytes, big-endian) + payload.
+        // The payload starts with "Adobe\0" (5 bytes) + version (2 bytes) + flags0
+        // (2 bytes) + flags1 (2 bytes) + color-transform (1 byte). For a CMYK image
+        // the color-transform byte is 2 (YCCK). The standard payload is 14 bytes, so
+        // segLen = 14 + 2 = 16. The pre-fix code dropped this segment; the post-fix
+        // code preserves it.
+        var payload = new byte[]
+        {
+            (byte)'A', (byte)'d', (byte)'o', (byte)'b', (byte)'e', 0x00,  // "Adobe\0"
+            0x00, 0x64,  // version 100
+            0x00, 0x00,  // flags0
+            0x00, 0x00,  // flags1
+            0x02         // color-transform = 2 (YCCK)
+        };
+        var bytes = new List<byte>();
+        bytes.Add(0xFF); bytes.Add(0xD8);  // SOI
+        AppendApp0Jfif(bytes);
+        AppendApp14Adobe(bytes, payload);
+        AppendDqt(bytes);
+        AppendSof0(bytes, 4, 4);
+        AppendDht(bytes);
+        AppendSos(bytes);
+        AppendEntropy(bytes);
+        bytes.Add(0xFF); bytes.Add(0xD9);  // EOI
+        return bytes.ToArray();
+    }
+
+    /// <summary>
     /// Minimal PNG with only the critical chunks. 4x4 RGB.
     /// </summary>
     public static byte[] MinimalPng()
@@ -601,6 +639,9 @@ internal static class FixtureFactory
 
     private static void AppendCom(List<byte> b, string text) =>
         AppendSegment(b, 0xFE, Encoding.ASCII.GetBytes(text));
+
+    private static void AppendApp14Adobe(List<byte> b, byte[] payload) =>
+        AppendSegment(b, 0xEE, payload);
 
     private static void AppendDqt(List<byte> b)
     {

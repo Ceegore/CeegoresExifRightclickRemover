@@ -5,6 +5,32 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.23 — 2026-08-05 — 360° audit round 20 (APP14 / CMYK color shift)
+- **D81** `src/ExifRemover.Engine/JpegMetadataStripper.cs:ShouldDrop` —
+  the pre-fix code dropped APP14 (Adobe marker) along with all other
+  APPn segments. APP14 carries the color-transform byte that identifies
+  a JPEG's color space — YCbCr (value 1) for normal JPEGs, YCCK
+  (value 2) for CMYK JPEGs. Dropping APP14 caused a visible color
+  shift on CMYK JPEGs after stripping: the encoder's color-transform
+  flag is lost, so most viewers fall back to YCbCr decoding and render
+  the image with wrong colors. The catalog contract is
+  "Privacy keeps color management" — every other color hint (JFIF,
+  ICC, gAMA, cHRM, sRGB) is kept under at least one profile. The
+  pre-fix code violated that contract for APP14. Fix: return false
+  (keep) for marker 0xEE in the APPn branch of `ShouldDrop`. The
+  post-fix code preserves APP14 under all 3 strip profiles (Privacy,
+  AllMetadata, Minimal). Note that `MetadataExtractor` does not
+  surface APP14 as a directory, so the review grid never shows the
+  entry — this fix is silent from the UI's perspective, but the
+  byte-preservation matters for CMYK decoding.
+  New fixture `FixtureFactory.JpegWithApp14()` (a minimal JPEG with
+  an APP14 Adobe segment with color-transform byte = 2 for YCCK) and
+  new test
+  `JpegStripperTests.Strip_JpegWithApp14_PreservesApp14_ForCmykColorSpace`
+  (asserts the output is byte-identical to the input under all 3
+  strip profiles and `DroppedSegments == 0`).
+- xUnit: 77 → 78 tests (+1 for D81). SelfTest: 16/16 stable.
+
 ## M2.20.22 — 2026-08-05 — 360° audit round 19 (iCCP double-surfacing probe)
 - **D80** (proactive) `tests/ExifRemover.Tests/IccGroupingTests.cs` —
   no source bug was found, but the audit probed a latent risk: PNG

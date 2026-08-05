@@ -208,6 +208,21 @@ public static class JpegMetadataStripper
                 }
             }
 
+            // D81 (M2.20.23): APP14 (Adobe marker) is color-management metadata, not personal
+            // information. The catalog contract is "Privacy keeps color management" — every
+            // other color-management hint (JFIF, ICC, gAMA, cHRM, sRGB) is kept under at
+            // least one profile. Dropping APP14 violates that contract and causes a visible
+            // color shift on CMYK JPEGs, which identify their color space via APP14's
+            // color-transform byte. Fix: keep APP14 under all profiles. Note that
+            // MetadataExtractor does not surface APP14 as a directory, so the review grid
+            // never shows the entry — this fix is silent from the UI's perspective, but
+            // the byte-preservation matters for CMYK decoding.
+            if (marker == 0xEE)
+            {
+                reason = "APP14 (Adobe)";
+                return false;
+            }
+
             reason = $"APP{marker - 0xE0}";
             return true;
         }
