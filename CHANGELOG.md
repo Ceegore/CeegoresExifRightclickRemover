@@ -5,6 +5,46 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.29 — 2026-08-05 — 360° audit round 26 (verifier IsValidJpeg/IsValidPng + LocateVerifier off-by-one)
+- **D90** `verify/Program.cs` — the pre-fix code unconditionally
+  called `IsValidJpeg(outBytes)` to determine the
+  `output_decodes=yes|no` line. The Python harness only ran JPEG
+  inputs, so the bug never fired, but a PNG input would produce a
+  perfectly-valid PNG output and the verifier would still report
+  `output_decodes=no` (because the PNG signature is not the
+  JPEG signature). Fix: detect the input format via
+  `ImageFormatDetector.Detect(bytes)` and call the right
+  validator (added `IsValidPng` for PNG outputs). The stripper
+  preserves the input format (JPEG in → JPEG out, PNG in → PNG
+  out), so the output's format is the same as the input's. A
+  new `output_format={Jpeg|Png}` line is also emitted so the
+  Python harness can verify the format.
+  New integration test
+  `VerifierProcessTests.Verifier_PngInput_ReportsOutputDecodesYes`
+  runs the real verifier on a PNG and asserts the
+  `output_decodes=yes` and `output_format=Png` lines.
+- **D91** `tests/ExifRemover.Tests/VerifierProcessTests.cs:LocateVerifier`
+  — the pre-fix code used `for (int i = 0; i < 6; i++)` to walk
+  the directory tree looking for the verifier exe. The test DLL
+  is at `<repo>/tests/ExifRemover.Tests/bin/Debug/net8.0/win-x64/`
+  which is 6 levels below the repo root, so the loop checked 6
+  levels but the verifier lives at the 7th level (the repo
+  root). Result: the loop never found the verifier, the
+  `if (verifier is null) return;` short-circuit fired, and the
+  test was effectively a no-op. Both the existing
+  `Verifier_InputPathEqualsOutputPath_DoesNotDestroyInput` test
+  AND the new `Verifier_PngInput_ReportsOutputDecodesYes` test
+  were affected. Fix: bump the loop bound to 8. The D90 test
+  exposed this latent bug because the test only takes 5ms
+  when it short-circuits but ~250ms when it actually runs the
+  verifier; the discrepancy tipped off the audit.
+  This is an off-by-one in the loop bound — a textbook
+  R17-3 pattern (silent failure on a test path). The test
+  passed for years because nobody noticed the 5ms runtime
+  (vs. the expected ~1s). The fix is one line.
+- xUnit: 103 → 104 tests (+1 for D90). SelfTest: 16/16 stable.
+- Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.28 — 2026-08-05 — 360° audit round 25 (AboutWindow hyperlink: show MessageBox on failure)
 - **D89** `src/ExifRemover.App/AboutWindow.xaml.cs:Hyperlink_RequestNavigate`
   — the pre-fix code had a bare `catch { }` that silently
