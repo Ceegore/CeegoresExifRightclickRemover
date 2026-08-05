@@ -5,6 +5,36 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.34 — 2026-08-05 — 360° audit round 31 (rephrase post-strip status text)
+- **D96** `src/ExifRemover.App/OverlayViewModel.cs:422` —
+  rephrased the post-strip status text parenthetical from
+  `(last strip removed all)` to `(pre-strip snapshot)`. The
+  pre-fix wording was misleading in two cases: (1) when a
+  filter is active (`VisibleEntryCount < snap.Count`), the
+  user might wonder "if the strip removed all, why are there
+  Y entries?" — the answer is the grid is showing the
+  pre-strip snapshot, not the post-strip state; (2) when
+  the keep-set is non-empty (e.g. Privacy keeps JFIF,
+  Minimal keeps ICC), "removed all" implied the strip wiped
+  every metadata entry, but the strip only removed the
+  non-keep-set entries. The new wording is terse and
+  accurate: the grid is showing the pre-strip entries (all
+  marked "Would be removed" because the snapshot is the
+  source of truth), and the user infers the strip succeeded
+  from the grid state without a misleading claim about WHAT
+  was removed.
+  1 new source-shape test in
+  `tests/ExifRemover.Tests/OverlayViewModelStatusTextTests.cs`:
+  comment-stripped source must contain
+  `entries shown (pre-strip snapshot)` and must NOT contain
+  `last strip removed all`. Uses the M2.20.26 D85
+  `StripComments` pattern (strips comments, KEEPS string
+  contents — because the new wording lives inside a string
+  literal, and stripping strings would delete the very
+  substring the test is trying to assert).
+- xUnit: 134 → 135 tests (+1 for D96). SelfTest: 17/17
+  stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.33 — 2026-08-05 — 360° audit round 30 (DRY in SelfTest, extract CountStuffedFf00 + AssertValidJpeg)
 - **D95** `src/ExifRemover.SelfTest/Program.cs` —
   SelfTest `Program.cs` had two hand-rolled duplications that
