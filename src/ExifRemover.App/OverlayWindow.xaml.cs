@@ -59,9 +59,10 @@ public partial class OverlayWindow : Window
         // call would otherwise see FileEntryViewModel.Inspection == null for every
         // file and produce an empty snapshot, leaving the post-strip grid showing
         // "0 entries removed" with no way to know what was actually in the files.
-        RemoveButton.IsEnabled = false;
-        CancelButton.IsEnabled = false;
-        ReInspectButton.IsEnabled = false;
+        // D94: collapsed to the SetBusyState helper — every other multi-button
+        // busy/idle transition in this file goes through the same helper, so this
+        // site is the single canonical entry point.
+        SetBusyState(true);
         _vm.IsBusy = true;
         // D5: wrap the inspect call in a try/catch and surface any thrown exception on
         // the UI thread. The previous Task.Run() did not observe exceptions, so if
@@ -87,18 +88,14 @@ public partial class OverlayWindow : Window
                 {
                     _vm.IsBusy = false;
                     _vm.StatusText = $"Could not inspect files: {ex.Message}";
-                    RemoveButton.IsEnabled = true;
-                    CancelButton.IsEnabled = true;
-                    ReInspectButton.IsEnabled = true;
+                    SetBusyState(false);
                 });
                 return;
             }
             SafeInvoke(() =>
             {
                 _vm.IsBusy = false;
-                RemoveButton.IsEnabled = true;
-                CancelButton.IsEnabled = true;
-                ReInspectButton.IsEnabled = true;
+                SetBusyState(false);
             });
         });
     }
@@ -130,15 +127,54 @@ public partial class OverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// D94: enable/disable the three action buttons (Remove, Cancel, ReInspect) as a
+    /// single unit. Before this helper existed, every busy/idle transition in the
+    /// file hand-rolled the same 3-line block:
+    /// <code>
+    ///     RemoveButton.IsEnabled = ...;
+    ///     CancelButton.IsEnabled = ...;
+    ///     ReInspectButton.IsEnabled = ...;
+    /// </code>
+    /// 7 call sites (3 disable + 4 enable) = 21 identical lines. Forgetting one of
+    /// the three buttons at a new transition site is a silent UX bug (e.g. the
+    /// Remove button stays enabled mid-inspect, racing the snapshot capture that
+    /// D11 protects against). Funneling every transition through this helper makes
+    /// the contract explicit: there is exactly one way to change the busy/idle
+    /// state of the action bar, and any future audit round can verify the count
+    /// with a source-shape regression test.
+    ///
+    /// <para>
+    /// This helper deliberately does NOT touch <c>_vm.IsBusy</c> — the progress bar
+    /// bound to that property is a separate concern (it shows during a real
+    /// operation but should NOT show over a fatal error message). Callers that
+    /// are starting/ending a real operation set <c>_vm.IsBusy</c> on the line
+    /// before or after the helper call.
+    /// </para>
+    /// </summary>
+    /// <param name="busy">
+    /// <c>true</c> to disable all three action buttons (a real operation is in
+    /// flight, or the window is no longer interactive); <c>false</c> to re-enable
+    /// them (operation completed or failed cleanly).
+    /// </param>
+    private void SetBusyState(bool busy)
+    {
+        RemoveButton.IsEnabled = !busy;
+        CancelButton.IsEnabled = !busy;
+        ReInspectButton.IsEnabled = !busy;
+    }
+
     private void ShowFatal(string message)
     {
         // D10: BaseSubtitle drives the bound SubtitleText, and StatusText is the VM-bound
         // property — both will be displayed correctly without manual Text assignment.
         _vm.BaseSubtitle = message;
         _vm.StatusText = message;
-        RemoveButton.IsEnabled = false;
-        CancelButton.IsEnabled = false;
-        ReInspectButton.IsEnabled = false;
+        // D94: collapse the 3-button disable into the helper. Note we do NOT
+        // set _vm.IsBusy = true here: that would show the progress bar over the
+        // error message, which is the wrong UX. The 3 buttons being disabled is
+        // the user-facing signal that the window is no longer interactive.
+        SetBusyState(true);
     }
 
     /// <summary>
@@ -260,9 +296,8 @@ public partial class OverlayWindow : Window
         // (all marked "Would be removed") so the user can see what was actually taken out.
         _vm.CapturePreStripSnapshots();
 
-        RemoveButton.IsEnabled = false;
-        CancelButton.IsEnabled = false;
-        ReInspectButton.IsEnabled = false;
+        // D94: collapse the 3-button disable into the helper.
+        SetBusyState(true);
         _vm.IsBusy = true;
         _vm.ProgressValue = 0;
 
@@ -288,9 +323,8 @@ public partial class OverlayWindow : Window
                 {
                     _vm.IsBusy = false;
                     _vm.StatusText = $"Strip failed: {ex.Message}";
-                    RemoveButton.IsEnabled = true;
-                    CancelButton.IsEnabled = true;
-                    ReInspectButton.IsEnabled = true;
+                    // D94: collapse the 3-button enable into the helper.
+                    SetBusyState(false);
                 });
                 return;
             }
@@ -306,13 +340,12 @@ public partial class OverlayWindow : Window
                 ShowSummary(report);
 
                 // Re-enable the controls so the window is usable again after a strip.
-                RemoveButton.IsEnabled = true;
-                CancelButton.IsEnabled = true;
-                ReInspectButton.IsEnabled = true;
-                // The pre-strip snapshot (captured in RunRemove before the strip) is
-                // rendered by RebuildCurrentEntries until the user explicitly re-inspects
-                // a file. The "↻" button in the header (D14 fix) clears the snapshot
-                // and re-inspects so the user can confirm the post-strip state.
+                // D94: collapse the 3-button enable into the helper. The pre-strip
+                // snapshot (captured in RunRemove before the strip) is rendered by
+                // RebuildCurrentEntries until the user explicitly re-inspects a file.
+                // The "↻" button in the header (D14 fix) clears the snapshot and
+                // re-inspects so the user can confirm the post-strip state.
+                SetBusyState(false);
             });
         });
     }
