@@ -5,6 +5,32 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.38 — 2026-08-05 — 360° audit round 35 (extract JfxxMagic + IccProfileMagic constants in JpegMetadataStripper)
+- **D100** `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
+  the JPEG stripper's `ShouldDrop` had 2 inline byte-
+  comparison patterns for the JFXX and ICC profile magic
+  prefixes (5 + 12 = 17 individual byte comparisons). The
+  pre-fix code was inconsistent: the JFIF check already
+  used a `JfifMagic` constant + `SequenceEqual`, but the
+  JFXX and ICC checks inlined the magic bytes. The M2.20.37
+  D99 fix established the pattern in the verifier
+  (`PngSignature`, `IendTypeBytes`); D100 applies the
+  same pattern to the stripper for consistency. 2 new
+  constants `JfxxMagic` (5 bytes) and `IccProfileMagic`
+  (12 bytes) added. Both checks now use `SequenceEqual`
+  against the named constant. 17 inline byte comparisons
+  collapse to 2 `SequenceEqual` calls.
+  3 new source-shape tests in
+  `tests/ExifRemover.Tests/JpegMetadataStripperShapeTests.cs`:
+  `JfxxMagic` constant must be present and used in
+  `SequenceEqual(JfxxMagic)`; `IccProfileMagic` constant
+  must be present and used in
+  `SequenceEqual(IccProfileMagic)`; regex sweep for
+  `jfifSniff[N] == 0x..` and `iccSniff[N] == 0x..`
+  should be 0 matches post-fix.
+- xUnit: 150 → 153 tests (+3 for D100). SelfTest: 17/17
+  stable. Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.37 — 2026-08-05 — 360° audit round 34 (clean up IsValidPng redundant check + extract PNG signature / IEND constants)
 - **D99** `verify/Program.cs` — the verifier's
   `IsValidPng` (added in M2.20.29 D90) had 3 minor
