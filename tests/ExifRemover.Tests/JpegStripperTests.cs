@@ -494,4 +494,50 @@ public class JpegStripperTests : IDisposable
             $"because the pre-fix code dropped 4 0xFF fill bytes. " +
             $"Input {bytes.Length} bytes, output {outBytes.Length} bytes.");
     }
+
+    [Fact]
+    public void Strip_JpegWithApp14_PreservesApp14_ForCmykColorSpace()
+    {
+        // D81 (M2.20.23): the pre-fix stripper dropped APP14 (Adobe marker) along with
+        // all other APPn segments. APP14 carries the color-transform byte that
+        // identifies a JPEG's color space (YCbCr vs YCCK for CMYK). Dropping APP14
+        // caused a visible color shift on CMYK JPEGs after stripping. The catalog
+        // contract is "Privacy keeps color management" — every other color hint
+        // (JFIF, ICC, gAMA, cHRM, sRGB) is kept under at least one profile. The fix:
+        // keep APP14 under all profiles. The test pins the contract: a JPEG with
+        // APP14 must produce a byte-identical output under all 3 strip profiles.
+        var bytes = FixtureFactory.JpegWithApp14();
+        var src = WriteTemp(bytes, $"er-app14-{Guid.NewGuid():N}.jpg");
+        var outPrivacy = Path.Combine(Path.GetTempPath(), $"er-app14-priv-{Guid.NewGuid():N}.jpg");
+        var outAll = Path.Combine(Path.GetTempPath(), $"er-app14-all-{Guid.NewGuid():N}.jpg");
+        var outMin = Path.Combine(Path.GetTempPath(), $"er-app14-min-{Guid.NewGuid():N}.jpg");
+        _tempFiles.AddRange(new[] { outPrivacy, outAll, outMin });
+
+        // The file has no metadata to drop — APP14 is preserved under every profile.
+        // Under the pre-fix code, the stripper would drop APP14 (marking it as a drop
+        // along with all other APPn), produce a smaller output, and the user would
+        // see a color shift on CMYK JPEGs.
+        var rPrivacy = JpegMetadataStripper.Strip(src, outPrivacy, false, StripProfile.Privacy);
+        var rAll = JpegMetadataStripper.Strip(src, outAll, false, StripProfile.AllMetadata);
+        var rMin = JpegMetadataStripper.Strip(src, outMin, false, StripProfile.Minimal);
+
+        var outPrivacyBytes = File.ReadAllBytes(outPrivacy);
+        var outAllBytes = File.ReadAllBytes(outAll);
+        var outMinBytes = File.ReadAllBytes(outMin);
+
+        // All 3 profiles must produce a byte-identical output to the input.
+        // Pre-fix: Privacy / AllMetadata / Minimal would all drop APP14 (the only
+        // "metadata" in this fixture), producing a 16-byte-shorter output.
+        Assert.Equal(bytes, outPrivacyBytes);
+        Assert.Equal(bytes, outAllBytes);
+        Assert.Equal(bytes, outMinBytes);
+
+        // The stripper must report 0 dropped segments under all 3 profiles.
+        Assert.Equal(0, rPrivacy.DroppedSegments);
+        Assert.Equal(0, rAll.DroppedSegments);
+        Assert.Equal(0, rMin.DroppedSegments);
+        Assert.False(rPrivacy.Changed);
+        Assert.False(rAll.Changed);
+        Assert.False(rMin.Changed);
+    }
 }
