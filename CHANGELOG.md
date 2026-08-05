@@ -5,6 +5,57 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.26 — 2026-08-05 — 360° audit round 23 (extract `CleanupOrphanedOutput` + remove dead `_allPaths` field)
+- **D85** `src/ExifRemover.App/OverlayViewModel.cs` — the pre-fix code
+  declared a `private readonly List<string> _allPaths;` field that was
+  assigned in the constructor (via `paths.ToList()`) and iterated two
+  lines later, but never read anywhere else in the codebase. The
+  field is a textbook R17-2 (dead code) finding: a private field that
+  survived multiple audit rounds because it was never exercised
+  outside the constructor. The fix removed both the field and the
+  `paths.ToList()` allocation (an unnecessary per-instance List
+  allocation that added GC pressure), iterating the `paths`
+  parameter directly. The pattern is the same R17-2 finding that D82
+  caught for `StripResult.Warning`.
+  New source-shape regression test
+  `OverlayViewModelShapeTests.OverlayViewModel_DoesNotDeclareDeadAllPathsField`
+  reads the source file as text, strips comments, and asserts the
+  field name is NOT present. A future commit that re-introduces the
+  dead field would fail the test, forcing a conscious decision. The
+  test uses a naive comment stripper (R16 lesson: a regression that
+  re-introduces the pattern in a comment would pass a naive
+  substring check, so we strip both `//` and `/* */` comments and
+  preserve string literals).
+- **D86** `src/ExifRemover.Engine/AtomicFile.cs:CleanupOrphanedOutput`
+  (new) — the pre-fix code had a one-liner
+  `try { if (File.Exists(actualOutputPath) && (!overwriteSource || actualOutputPath != sourcePath)) File.Delete(actualOutputPath); } catch { }`
+  in BOTH `JpegMetadataStripper.cs` and `PngMetadataStripper.cs`. The
+  two copies were byte-identical. This is the same D83-style
+  DRY-drift pattern: a future contributor who updates the cleanup
+  logic (e.g. adds a retry on lock, switches to a `File.Delete` that
+  waits for an AV scan, logs the cleanup failure) would have to
+  remember to update the other copy too. The fix: extract the
+  helper. Both strippers' catch blocks now call
+  `AtomicFile.CleanupOrphanedOutput(actualOutputPath, sourcePath, overwriteSource)`.
+  The helper preserves the original semantics: delete the orphan
+  only if it exists AND it's not the same path as the source under
+  the overwrite path; swallow any cleanup exception so it doesn't
+  mask the original stripper exception.
+  New regression tests in `AtomicFileTests.cs`:
+  `CleanupOrphanedOutput_FileExists_OverwriteFalse_DeletesFile`
+  (the basic case),
+  `CleanupOrphanedOutput_FileExists_OverwriteTrue_DifferentPath_DeletesFile`
+  (the overwrite-with-temp-file case),
+  `CleanupOrphanedOutput_FileExists_OverwriteTrue_SamePath_DoesNotDelete`
+  (the safety case where the source must not be deleted),
+  `CleanupOrphanedOutput_FileDoesNotExist_NoOp` (the pre-write
+  no-op case),
+  `CleanupOrphanedOutput_FileLocked_DoesNotThrow` (the
+  AV-lock case — the helper's internal catch swallows the
+  exception so it doesn't mask the original stripper exception).
+- xUnit: 88 → 94 tests (+6 for D85+D86). SelfTest: 16/16 stable.
+- Real-image verifier: ALL CHECKS PASSED.
+
 ## M2.20.25 — 2026-08-05 — 360° audit round 22 (extract `ReadExact` + `ResolveTempPath` helpers)
 - **D83** `AtomicFile.ResolveTempPath` (extracted) — the pre-fix
   code declared a private `ResolveTempPath(string sourcePath)` in BOTH

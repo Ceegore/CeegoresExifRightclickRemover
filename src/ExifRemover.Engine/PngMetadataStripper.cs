@@ -151,7 +151,9 @@ public static class PngMetadataStripper
         }
         catch
         {
-            try { if (File.Exists(actualOutputPath) && (!overwriteSource || actualOutputPath != sourcePath)) File.Delete(actualOutputPath); } catch { }
+            // D86 (M2.20.26): same as JpegMetadataStripper — the inline cleanup
+            // expression was extracted to AtomicFile.CleanupOrphanedOutput.
+            AtomicFile.CleanupOrphanedOutput(actualOutputPath, sourcePath, overwriteSource);
             throw;
         }
         finally

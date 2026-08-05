@@ -16,7 +16,6 @@ namespace ExifRemover.App;
 public sealed class OverlayViewModel : INotifyPropertyChanged
 {
     private readonly Dispatcher _dispatcher;
-    private readonly List<string> _allPaths;
     private readonly ObservableCollection<FileEntryViewModel> _files = new();
     private readonly Dictionary<string, FileEntryViewModel> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
@@ -30,8 +29,19 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
     public OverlayViewModel(IReadOnlyList<string> paths, Dispatcher dispatcher)
     {
         _dispatcher = dispatcher;
-        _allPaths = paths.ToList();
-        foreach (var p in _allPaths)
+        // D85 (M2.20.26): the pre-fix code copied `paths` into a private
+        // `_allPaths` field via `paths.ToList()` and then iterated `_allPaths`
+        // in the constructor. The field was never read anywhere else — the
+        // only consumer was the loop two lines below, which can iterate
+        // `paths` directly (it's already a `IReadOnlyList<string>`). The
+        // `.ToList()` was also unnecessary work: it allocated a new List
+        // for every OverlayViewModel instance and added GC pressure. The
+        // field has been removed; the loop iterates the parameter directly.
+        // The pattern is the same R17-2 (dead field) finding that D82 caught
+        // for `StripResult.Warning`: a private field that survived multiple
+        // audit rounds because it was never exercised outside the
+        // constructor.
+        foreach (var p in paths)
         {
             if (!File.Exists(p))
             {

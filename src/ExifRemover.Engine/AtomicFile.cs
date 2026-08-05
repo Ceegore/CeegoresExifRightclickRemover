@@ -59,4 +59,48 @@ internal static class AtomicFile
         var name = Path.GetFileName(sourcePath);
         return Path.Combine(dir, $".{name}.exifremover-{Guid.NewGuid():N}.tmp");
     }
+
+    /// <summary>
+    /// Deletes an orphaned output file left behind by a stripper that threw.
+    /// Called from the strippers' catch block (after a failed strip) so the
+    /// sibling or temp file doesn't survive as garbage on the user's disk.
+    ///
+    /// D86 (M2.20.26): the pre-fix code had a one-liner
+    /// <c>try { if (File.Exists(actualOutputPath) &amp;&amp; (!overwriteSource || actualOutputPath != sourcePath)) File.Delete(actualOutputPath); } catch { }</c>
+    /// in BOTH <c>JpegMetadataStripper.cs</c> and <c>PngMetadataStripper.cs</c>.
+    /// The two copies were byte-identical. This is the same D83-style DRY-drift
+    /// pattern: a future contributor who updates the cleanup logic (e.g. adds
+    /// a retry on lock, switches to a <c>File.Delete</c> that waits for an AV
+    /// scan, logs the cleanup failure) would have to remember to update the
+    /// other copy too. Missed updates silently diverge the two strippers'
+    /// failure-recovery paths.
+    ///
+    /// The conditions for deletion:
+    ///   * <paramref name="actualOutputPath"/> must exist (File.Delete is a
+    ///     no-op for non-existent files but we check explicitly to avoid a
+    ///     pointless syscall).
+    ///   * Either <paramref name="overwriteSource"/> is false (the output
+    ///     is a sibling, not the source — safe to delete), OR
+    ///     <paramref name="actualOutputPath"/> differs from
+    ///     <paramref name="sourcePath"/> (it's a temp file, not the original).
+    /// The internal try/catch swallows any exception (e.g. file is locked by
+    /// an AV scan) so a failed cleanup doesn't mask the original stripper
+    /// exception that the catch block is re-throwing.
+    /// </summary>
+    public static void CleanupOrphanedOutput(string actualOutputPath, string sourcePath, bool overwriteSource)
+    {
+        try
+        {
+            if (File.Exists(actualOutputPath) && (!overwriteSource || actualOutputPath != sourcePath))
+            {
+                File.Delete(actualOutputPath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup. A failure here (e.g. the file is locked by
+            // an AV scan) should not mask the original stripper exception
+            // that the caller's catch block is about to re-throw.
+        }
+    }
 }
