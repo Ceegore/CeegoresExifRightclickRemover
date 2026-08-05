@@ -17,7 +17,6 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
 {
     private readonly Dispatcher _dispatcher;
     private readonly ObservableCollection<FileEntryViewModel> _files = new();
-    private readonly Dictionary<string, FileEntryViewModel> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
     public ObservableCollection<FileEntryViewModel> Files => _files;
     public ICollectionView FilesView => CollectionViewSource.GetDefaultView(_files);
@@ -41,6 +40,17 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
         // for `StripResult.Warning`: a private field that survived multiple
         // audit rounds because it was never exercised outside the
         // constructor.
+        //
+        // D88 (M2.20.27): the pre-fix code also declared `_byPath` as a
+        // private field, used only in the constructor for the D78
+        // case-insensitive dedup. The field is dead after construction
+        // (never read by the property accessors, the strip pipeline, or
+        // the UI bindings — only the constructor's `ContainsKey` /
+        // indexer-set use it). Same R17-2 pattern as `_allPaths` /
+        // `StripResult.Warning`. Moved to a local `seen` dictionary.
+        // The `OrdinalIgnoreCase` comparer is preserved (Windows path
+        // semantics: "FOO.jpg" and "foo.jpg" refer to the same file).
+        var seen = new Dictionary<string, FileEntryViewModel>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in paths)
         {
             if (!File.Exists(p))
@@ -55,9 +65,10 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
             // appearing twice in the ComboBox, and the stripper processing it
             // twice — the second Strip call would either fail (source modified
             // between calls) or produce a duplicate "_stripped (2)" sibling.
-            // _byPath already uses OrdinalIgnoreCase, so a single ContainsKey
-            // check is enough to dedupe both case-different and exact duplicates.
-            if (_byPath.ContainsKey(p))
+            // `seen` (D88) already uses OrdinalIgnoreCase, so a single
+            // ContainsKey check is enough to dedupe both case-different and
+            // exact duplicates.
+            if (seen.ContainsKey(p))
             {
                 continue;
             }
@@ -73,7 +84,7 @@ public sealed class OverlayViewModel : INotifyPropertyChanged
                 }
             };
             _files.Add(vm);
-            _byPath[p] = vm;
+            seen[p] = vm;
         }
 
         foreach (StripProfile profile in Enum.GetValues<StripProfile>())

@@ -81,7 +81,12 @@ public static class PngMetadataStripper
                         // so we never need its contents in memory. IEND cannot reach this
                         // branch (it's forced to drop = false above), so the loop naturally
                         // terminates at IEND via the "kept" path on the next iteration.
-                        SkipExactly(input, length + 4);
+                        // D87 (M2.20.27): routed through StreamHelpers.SkipExactly which
+                        // takes long count. The previous private SkipExactly(long count)
+                        // had a Math.Min(count, int.MaxValue) clamp; the helper preserves
+                        // that clamp so the non-seekable path's `new byte[...]` allocation
+                        // can't overflow on a malicious 2^31-byte chunk length.
+                        StreamHelpers.SkipExactly(input, length + 4, "PNG");
                         dropped++;
                         continue;
                     }
@@ -215,30 +220,6 @@ public static class PngMetadataStripper
         }
 
         return false;
-    }
-
-    private static void SkipExactly(Stream s, long count)
-    {
-        if (s.CanSeek)
-        {
-            // Trust-but-verify: even on a seekable stream, a chunk length that runs past EOF
-            // would put Position past Length, which is illegal for the next read.
-            if (s.Position + count > s.Length)
-            {
-                throw new EndOfStreamException("Unexpected end of PNG stream during chunk skip.");
-            }
-            s.Seek(count, SeekOrigin.Current);
-            return;
-        }
-        var buf = new byte[Math.Min((int)Math.Min(count, int.MaxValue), 64 * 1024)];
-        long remaining = count;
-        while (remaining > 0)
-        {
-            int take = (int)Math.Min(remaining, buf.Length);
-            int n = s.Read(buf, 0, take);
-            if (n == 0) throw new EndOfStreamException("Unexpected end of PNG stream during chunk skip.");
-            remaining -= n;
-        }
     }
 
     private static string Ascii(ReadOnlySpan<byte> type)

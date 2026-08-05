@@ -106,7 +106,11 @@ public static class JpegMetadataStripper
 
                     if (ShouldDrop(marker, input, payloadLen, keepIcc, keepJfif, jfifSniff, iccSniff, out _))
                     {
-                        SkipExactly(input, payloadLen);
+                        // D87 (M2.20.27): the pre-fix code called a private
+                        // SkipExactly(int count) here. Now routed through
+                        // StreamHelpers.SkipExactly which takes long count.
+                        // The implicit widening from int to long is free.
+                        StreamHelpers.SkipExactly(input, payloadLen, "JPEG");
                         dropped++;
                         continue;
                     }
@@ -348,31 +352,6 @@ public static class JpegMetadataStripper
             int n = src.Read(buf, 0, take);
             if (n == 0) throw new EndOfStreamException("Unexpected end of JPEG stream during segment copy.");
             dst.Write(buf, 0, n);
-            remaining -= n;
-        }
-    }
-
-    private static void SkipExactly(Stream s, int count)
-    {
-        if (s.CanSeek)
-        {
-            // D65: trust-but-verify. A malformed JPEG whose segment-length field claims more
-            // bytes than remain would put Position past Length, which is illegal for the next
-            // read and surfaces as a less-informative "no marker" error. Catch it here with a
-            // accurate message — same pattern as the PNG stripper's SkipExactly.
-            if (s.Position + count > s.Length)
-            {
-                throw new EndOfStreamException("Unexpected end of JPEG stream during segment skip.");
-            }
-            s.Seek(count, SeekOrigin.Current);
-            return;
-        }
-        var buf = new byte[Math.Min(count, 64 * 1024)];
-        int remaining = count;
-        while (remaining > 0)
-        {
-            int n = s.Read(buf, 0, Math.Min(remaining, buf.Length));
-            if (n == 0) throw new EndOfStreamException("Unexpected end of JPEG stream during segment skip.");
             remaining -= n;
         }
     }

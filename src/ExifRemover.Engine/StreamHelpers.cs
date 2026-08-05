@@ -45,4 +45,69 @@ internal static class StreamHelpers
             total += n;
         }
     }
+
+    /// <summary>
+    /// Skips exactly <paramref name="count"/> bytes from <paramref name="s"/>.
+    /// On a seekable stream, uses <c>Stream.Seek</c> (O(1)) and trust-but-verify
+    /// the count doesn't run past the end of the stream. On a non-seekable
+    /// stream, uses a read loop (O(n)) with a 64 KB buffer, also verifying
+    /// the stream doesn't end before the skip completes.
+    ///
+    /// D87 (M2.20.27): the pre-fix code declared <c>SkipExactly</c> as a
+    /// private method in BOTH <c>JpegMetadataStripper.cs</c> and
+    /// <c>PngMetadataStripper.cs</c>. The two copies were nearly identical
+    /// — same algorithm, same error-message shape ("Unexpected end of {format}
+    /// stream during segment skip.") — but with a signature difference:
+    /// the JPEG side took <c>int count</c> (because JPEG segLen is uint16,
+    /// max 65535, so an int is sufficient), while the PNG side took
+    /// <c>long count</c> (because PNG chunk length is int32, +4 for the
+    /// CRC trailer could in theory push past int.MaxValue, and the
+    /// <c>new byte[count]</c> allocation in the non-seekable path would
+    /// throw on overflow). The PNG side had a
+    /// <c>Math.Min(count, int.MaxValue)</c> clamp to defend against this.
+    ///
+    /// The post-fix signature takes <c>long count</c> unconditionally and
+    /// applies the clamp. The JPEG call sites pass <c>(long)payloadLen</c>
+    /// (implicit widening from int to long is free). The result: one
+    /// <c>SkipExactly</c> implementation instead of two, with the same
+    /// trust-but-verify bounds check, the same error-message shape, and
+    /// the same overflow defense.
+    /// </summary>
+    public static void SkipExactly(Stream s, long count, string context)
+    {
+        if (s.CanSeek)
+        {
+            // Trust-but-verify: a malformed stream whose segment-length field
+            // claims more bytes than remain would put Position past Length,
+            // which is illegal for the next read and surfaces as a less
+            // informative "no marker" error. Catch it here with an accurate
+            // "during segment skip" message — same pattern as D65 for JPEG
+            // and the original PNG-side comment.
+            if (s.Position + count > s.Length)
+            {
+                throw new EndOfStreamException($"Unexpected end of {context} stream during segment skip.");
+            }
+            s.Seek(count, SeekOrigin.Current);
+            return;
+        }
+        // Non-seekable path: loop with a 64 KB buffer. The Math.Min clamps
+        // `count` to int.MaxValue so the `new byte[...]` allocation can't
+        // overflow even on a 32-bit runtime. (On a 64-bit runtime the
+        // allocation could in theory succeed for any long, but the read
+        // loop's `int take` cast would truncate, and the seekable path
+        // would have already caught the bounds violation. The clamp is
+        // defense in depth.)
+        var buf = new byte[Math.Min((int)Math.Min(count, int.MaxValue), 64 * 1024)];
+        long remaining = count;
+        while (remaining > 0)
+        {
+            int take = (int)Math.Min(remaining, buf.Length);
+            int n = s.Read(buf, 0, take);
+            if (n == 0)
+            {
+                throw new EndOfStreamException($"Unexpected end of {context} stream during segment skip.");
+            }
+            remaining -= n;
+        }
+    }
 }
