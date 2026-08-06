@@ -5,6 +5,47 @@ the `M2.20.x` (audit round) convention used by the project.
 
 ## [Unreleased]
 
+## M2.20.46 — 2026-08-06 — 360° audit round 43 (move CopyExactly from JpegMetadataStripper to StreamHelpers)
+- **D108** `src/ExifRemover.Engine/StreamHelpers.cs` +
+  `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
+  the pre-fix code had a private static
+  `CopyExactly(Stream, Stream, int)` helper
+  in `JpegMetadataStripper.cs` (used 2x in
+  the segment-walker to copy segment payloads
+  verbatim). The private helper survived 26
+  audit rounds (M2.20.20 → M2.20.45) because
+  it was scoped to a single file. The fix
+  moves the helper to
+  `ExifRemover.Engine.StreamHelpers.CopyExactly`
+  (matching the D83 `ReadExact` + D87
+  `SkipExactly` + D92 `ReadUpTo` + D98
+  `CountStuffedFf00` pattern of shared
+  stream-I/O helpers), with a `context`
+  parameter for the error message (same
+  pattern as the other shared helpers).
+  The 2 call sites now use
+  `StreamHelpers.CopyExactly(input, output,
+  payloadLen, "JPEG")`. 6 new direct unit
+  tests in `StreamHelpersTests.cs` (matching
+  the test density for `ReadExact` /
+  `SkipExactly` / `ReadUpTo`): basic copy,
+  short-read defense + context-tag in error
+  message, empty-source edge case, `count == 0`
+  no-op pin, 200 KB multi-chunk read loop,
+  non-seekable source pin. 1 new source-shape
+  regression test in
+  `JpegMetadataStripperShapeTests.cs` that
+  pins 2 contracts: (1) the local
+  `private static void CopyExactly(Stream,
+  Stream, int)` method appears 0 times; (2)
+  the 2 segment-walker call sites use
+  `StreamHelpers.CopyExactly(input, output,
+  payloadLen, "JPEG")`.
+- xUnit: 203 → 210 tests (+7 for D108: 6
+  direct + 1 source-shape). All 210 green.
+  SelfTest 17/17. Real-image verifier: ALL
+  CHECKS PASSED.
+
 ## M2.20.45 — 2026-08-06 — 360° audit round 42 (remove dead 1-out-param ReadMarker overload in JpegMetadataStripper)
 - **D107** `src/ExifRemover.Engine/JpegMetadataStripper.cs` —
   deleted the `private static bool
